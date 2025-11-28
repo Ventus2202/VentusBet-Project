@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Control Room - VentusBet</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #2c3e50; color: white; }
+        .grid { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; }
+        .card { background: #34495e; padding: 20px; border-radius: 10px; }
+        .btn { display: block; width: 100%; padding: 15px; margin-bottom: 10px; border: none; border-radius: 5px; cursor: pointer; color: white; font-size: 16px; text-align: center; text-decoration: none;}
+        .btn-api { background: #e67e22; }
+        .btn-calc { background: #2980b9; }
+        .btn-ai { background: #27ae60; }
+        .btn-edit { background: #f1c40f; color: #333; display: inline-block; width: auto; padding: 5px 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        td { padding: 10px; border-bottom: 1px solid #7f8c8d; }
+        .alert { padding: 10px; background: #eee; color: #333; margin-bottom: 20px; border-radius: 5px;}
+    </style>
+</head>
+<body>
+    <h1>⚙️ Control Room VentusBet</h1>
+    
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="grid">
+        <div class="card">
+            <h3>🤖 Azioni Automatiche</h3>
+            <form method="post">
+                {% csrf_token %}
+                <button type="submit" name="action" value="update_fixtures" class="btn btn-api">1. Scarica Partite (API)</button>
+                <button type="submit" name="action" value="calc_features" class="btn btn-calc">2. Calcola Features & ELO</button>
+                <button type="submit" name="action" value="train_ai" class="btn btn-ai">3. Addestra IA</button>
+                <button type="submit" name="action" value="predict_next" class="btn" style="background: #8e44ad;">4. Genera Previsioni</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>📝 Partite in Attesa di Risultato</h3>
+            <table>
+                {% for m in pending_matches %}
+                <tr>
+                    <td>{{ m.date_time|date:"d/m" }}</td>
+                    <td>{{ m.home_team }} vs {{ m.away_team }}</td>
+                    <td>
+                        <a href="{% url 'edit_match' m.id %}" class="btn btn-edit">Inserisci Dati</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td>Nessuna partita in attesa. Tutto aggiornato!</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{% extends 'predictors/base.html' %}
+
+{% block content %}
+<div class="card">
+    <h2>🏆 Classifica Serie A</h2>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>POS</th>
+                <th style="text-align: left;">SQUADRA</th>
+                <th>PT</th>
+                <th>G</th>
+                <th>V</th>
+                <th>N</th>
+                <th>P</th>
+                <th>DR</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in table %}
+            <tr>
+                <td data-label="POS" style="font-weight: bold; 
+                    {% if row.position <= 4 %}color: #0151c4;{% elif row.position <= 6 %}color: #d97706;{% elif row.position >= 18 %}color: #dc2626;{% endif %}">
+                    {{ row.position }}
+                </td>
+                
+                <td data-label="Squadra">
+                    <a href="{% url 'team_detail' row.team.id %}" style="text-decoration: none; color: inherit; font-weight: bold; display: flex; align-items: center; gap: 10px;">
+                        {% if row.team.logo %}
+                            <img src="{{ row.team.logo.url }}" style="height: 30px; width: 30px; object-fit: contain;">
+                        {% endif %}
+                        {{ row.team.name }}
+                    </a>
+                </td>
+                
+                <td data-label="PT" style="font-weight: bold; font-size: 1.1em; color: var(--primary-color);">{{ row.points }}</td>
+                <td data-label="G">{{ row.played }}</td>
+                <td data-label="V">{{ row.won }}</td>
+                <td data-label="N">{{ row.drawn }}</td>
+                <td data-label="P">{{ row.lost }}</td>
+                <td data-label="DR">{{ row.gd }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

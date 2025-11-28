@@ -1,0 +1,64 @@
+{% extends 'predictors/base.html' %}
+
+{% block content %}
+<h2>🤖 Performance IA</h2>
+
+{% if total_matches > 0 %}
+    <!-- Statistiche Aggregate -->
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px;">
+        <div class="card">
+            <div>{{ accuracy|floatformat:2 }}%</div>
+            <div>ACCURATEZZA ESITO</div>
+        </div>
+        <div class="card">
+            <div>{{ mae_goals|floatformat:2 }}</div>
+            <div>ERRORE MEDIO GOAL</div>
+        </div>
+        <div class="card">
+            <div>{{ total_matches }}</div>
+            <div>PARTITE VALUTATE</div>
+        </div>
+    </div>
+
+    <!-- Dettaglio Confronti -->
+    <div class="card">
+        <h3>Confronto Previsioni vs Risultati</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>PARTITA</th>
+                    <th>PREVISIONE</th>
+                    <th>RISULTATO</th>
+                    <th>ESITO CORRETTO?</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in comparisons %}
+                <tr>
+                    <td data-label="Partita">
+                        <a href="{% url 'match_detail' item.match.id %}">
+                            {{ item.match.home_team.short_name }} vs {{ item.match.away_team.short_name }}
+                        </a>
+                    </td>
+                    <td data-label="Previsione">{{ item.prediction.home_goals }} - {{ item.prediction.away_goals }}</td>
+                    <td data-label="Risultato">{{ item.result.home_goals }} - {{ item.result.away_goals }}</td>
+                    <td data-label="Esito Corretto?">
+                        {% if item.is_correct %}
+                            <span>✅</span>
+                        {% else %}
+                            <span>❌</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="card" style="text-align: center; padding: 40px;">
+        <h3>Nessuna partita ancora valutata.</h3>
+        <p>Questa pagina si popolerà automaticamente quando le partite con una previsione verranno segnate come "Finite" e avranno un risultato.</p>
+    </div>
+{% endif %}
+
+{% endblock %}

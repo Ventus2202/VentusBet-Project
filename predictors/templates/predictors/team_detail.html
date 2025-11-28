@@ -1,0 +1,60 @@
+{% extends 'predictors/base.html' %}
+    
+{% block content %}
+    <div class="card" style="text-align: center;">
+        {% if team.logo %}
+            <img src="{{ team.logo.url }}" style="height: 100px; margin-bottom: 10px;">
+        {% endif %}
+        <h1>{{ team.name }}</h1>
+        <div>{{ team.stadium_name }}</div>
+        
+        <div class="form-container">
+            {% for res in form %}<span class="form-dot form-{{ res }}"></span>{% endfor %}
+        </div>
+    </div>
+
+    <!-- Statistiche -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+        <div class="card">
+            <div>{{ stats.played }}</div>
+            <div>PARTITE</div>
+        </div>
+        <div class="card">
+            <div>{{ stats.wins }}</div>
+            <div>VITTORIE</div>
+        </div>
+        <div class="card">
+            <div>{{ stats.avg_gf }}</div>
+            <div>MEDIA GOAL FATTI</div>
+        </div>
+        <div class="card">
+            <div>{{ stats.avg_ga }}</div>
+            <div>MEDIA GOAL SUBITI</div>
+        </div>
+    </div>
+
+    <!-- Storico -->
+    <h3>📅 Calendario & Risultati</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Partita</th>
+                <th>Azione</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for match in played_matches %}
+            <tr>
+                <td data-label="Data">{{ match.date_time|date:"d M" }}</td>
+                <td data-label="Partita">
+                    {{ match.home_team.short_name|default:match.home_team.name }} 
+                    <span>{{ match.result.home_goals }} - {{ match.result.away_goals }}</span> 
+                    {{ match.away_team.short_name|default:match.away_team.name }}
+                </td>
+                <td data-label="Azione"><a href="{% url 'match_detail' match.id %}" class="btn">Dettagli</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VentusBet - AI Predictions</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+
+    <nav class="navbar">
+        <a href="{% url 'dashboard' %}" class="logo-container">
+            <img src="{% static 'img/logo.png' %}" alt="VentusBet Logo" class="logo-img">
+            <span>VentusBet</span>
+        </a>
+        
+        <div class="nav-links">
+            <a href="{% url 'standings' %}">Classifiche</a>
+            <a href="{% url 'performance' %}">Performance</a>
+            {% if user.is_superuser %}
+                <a href="{% url 'control_panel' %}" style="color: var(--accent-color);">Control Room</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="card" style="background: var(--primary-color); border-left: 5px solid var(--accent-color);">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}
+        {% endblock %}
+    </div>
+
+</body>
+</html>
