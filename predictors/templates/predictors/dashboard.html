@@ -62,53 +62,77 @@
 
             <!-- Box Previsione Statistiche -->
             {% if item.prediction %}
-            <div class="prediction-table">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>{{ item.match.home_team.short_name|default:"Casa" }}</th>
-                            <th>STAT</th>
-                            <th>{{ item.match.away_team.short_name|default:"Ospite" }}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>{{ item.prediction.home_goals }}</td>
-                            <td>GOAL</td>
-                            <td>{{ item.prediction.away_goals }}</td>
-                        </tr>
-                        <tr>
-                            <td>{{ item.prediction.home_total_shots }}</td>
-                            <td>TIRI TOT</td>
-                            <td>{{ item.prediction.away_total_shots }}</td>
-                        </tr>
-                        <tr>
-                            <td>{{ item.prediction.home_shots_on_target }}</td>
-                            <td>IN PORTA</td>
-                            <td>{{ item.prediction.away_shots_on_target }}</td>
-                        </tr>
-                        <tr>
-                            <td>{{ item.prediction.home_corners }}</td>
-                            <td>CORNER</td>
-                            <td>{{ item.prediction.away_corners }}</td>
-                        </tr>
-                         <tr>
-                            <td>{{ item.prediction.home_fouls }}</td>
-                            <td>FALLI</td>
-                            <td>{{ item.prediction.away_fouls }}</td>
-                        </tr>
-                        <tr>
-                            <td>{{ item.prediction.home_yellow_cards }}</td>
-                            <td>GIALLI</td>
-                            <td>{{ item.prediction.away_yellow_cards }}</td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="prediction-box">
+                
+                <div class="prediction-header">
+                    <div class="score-container">
+                        <span class="main-score home-score">{{ item.prediction.home_goals }}</span>
+                        <div class="score-label-group">
+                            <span class="vs-label">PREVISIONE</span>
+                        </div>
+                        <span class="main-score away-score">{{ item.prediction.away_goals }}</span>
+                    </div>
+                </div>
+            
+                <div class="stats-bars-container">
+                    
+                    <div class="stat-unit">
+                        <div class="stat-top">
+                            <span class="stat-value">{{ item.prediction.home_total_shots }}</span>
+                            <span class="stat-name">TIRI TOTALI</span>
+                            <span class="stat-value">{{ item.prediction.away_total_shots }}</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_total_shots }};"></div>
+                            <div class="bar-separator"></div>
+                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_total_shots }};"></div>
+                        </div>
+                    </div>
+            
+                    <div class="stat-unit">
+                        <div class="stat-top">
+                            <span class="stat-value">{{ item.prediction.home_shots_on_target }}</span>
+                            <span class="stat-name">IN PORTA</span>
+                            <span class="stat-value">{{ item.prediction.away_shots_on_target }}</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_shots_on_target }};"></div>
+                            <div class="bar-separator"></div>
+                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_shots_on_target }};"></div>
+                        </div>
+                    </div>
+            
+                    <div class="stat-unit">
+                        <div class="stat-top">
+                            <span class="stat-value">{{ item.prediction.home_corners }}</span>
+                            <span class="stat-name">CORNER</span>
+                            <span class="stat-value">{{ item.prediction.away_corners }}</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_corners|add:'0.1' }};"></div>
+                            <div class="bar-separator"></div>
+                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_corners|add:'0.1' }};"></div>
+                        </div>
+                    </div>
+            
+                    <div class="stat-unit">
+                        <div class="stat-top">
+                            <span class="stat-value">{{ item.prediction.home_yellow_cards }}</span>
+                            <span class="stat-name">GIALLI</span>
+                            <span class="stat-value">{{ item.prediction.away_yellow_cards }}</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_yellow_cards|add:'0.1' }};"></div>
+                            <div class="bar-separator"></div>
+                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_yellow_cards|add:'0.1' }};"></div>
+                        </div>
+                    </div>
+            
+                </div>
             </div>
             {% else %}
             <div class="prediction-placeholder">
-                <div style="font-size: 1.5em;">⌛</div>
-                <small>In attesa...</small>
+                <small>ANALISI IN CORSO...</small>
             </div>
             {% endif %}
 

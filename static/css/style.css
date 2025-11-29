@@ -382,3 +382,143 @@ tbody tr:hover {
     }
     td:last-child { border-bottom: none; }
 }
+
+
+
+/* --- VISUALIZZAZIONE "BARRE DI CONFRONTO" --- */
+
+.prediction-box {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px 25px;
+    margin: 0 20px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    flex-grow: 1;
+}
+
+/* Header punteggio */
+.prediction-header {
+    border-bottom: 1px solid #f1f3f5;
+    padding-bottom: 15px;
+    margin-bottom: 5px;
+}
+
+.score-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+}
+
+.main-score {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--primary-color);
+    width: 40px;
+    text-align: center;
+}
+
+.score-label-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.vs-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 1.5px;
+    background: #f8f9fa;
+    padding: 4px 10px;
+    border-radius: 20px;
+    text-transform: uppercase;
+}
+
+/* Container statistiche */
+.stats-bars-container {
+    display: flex;
+    flex-direction: column;
+    gap: 18px; /* Spazio tra le diverse statistiche */
+}
+
+.stat-unit {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Riga superiore con numeri e nome */
+.stat-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    padding: 0 2px;
+}
+
+.stat-value {
+    font-weight: 700;
+    width: 30px; /* Larghezza fissa per allineamento */
+}
+.stat-value:first-child { text-align: left; color: var(--primary-color); }
+.stat-value:last-child { text-align: right; color: var(--accent-color); }
+
+.stat-name {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #adb5bd;
+    letter-spacing: 0.5px;
+}
+
+/* La Barra Visiva */
+.progress-track {
+    display: flex;
+    width: 100%;
+    height: 6px; /* Altezza sottile ed elegante */
+    background-color: #f1f3f5;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.bar {
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+/* Colori delle barre */
+.home-bar {
+    background-color: var(--primary-color); /* Navy Blue */
+    border-right: 1px solid #fff; /* Piccolo separatore visivo */
+}
+
+.away-bar {
+    background-color: var(--accent-color); /* Bright Green */
+    border-left: 1px solid #fff;
+}
+
+.bar-separator {
+    width: 2px;
+    background: #fff;
+    z-index: 1;
+}
+
+/* --- MOBILE --- */
+ @media\** (max-width: 768px) {
+    .prediction-box {
+        margin: 10px 0;
+        padding: 15px;
+    }
+    .score-container {
+        gap: 10px;
+    }
+    .main-score {
+        font-size: 1.6rem;
+    }
+}
