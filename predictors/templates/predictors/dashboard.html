@@ -33,11 +33,11 @@
 
 <!-- SEZIONE 1: PARTITE FUTURE (PREVISIONI) -->
 <div style="margin-bottom: 50px;">
-    <h2>🚀 Prossimi Match</h2>
+    <h2>Previsioni</h2>
     
     {% for item in upcoming_matches %}
-    <div class="card match-card-link">
-        <a href="{% url 'match_detail' item.match.id %}" class="match-card-anchor"></a>
+    <div class="card match-card match-card-link">
+
         <div class="match-card-header">
             {{ item.match.date_time|date:"D d M - H:i" }}
         </div>
@@ -60,81 +60,104 @@
                 </div>
             </div>
 
-            <!-- Box Previsione Statistiche -->
-            {% if item.prediction %}
-            <div class="prediction-box">
-                
-                <div class="prediction-header">
-                    <div class="score-container">
-                        <span class="main-score home-score">{{ item.prediction.home_goals }}</span>
-                        <div class="score-label-group">
-                            <span class="vs-label">PREVISIONE</span>
-                        </div>
-                        <span class="main-score away-score">{{ item.prediction.away_goals }}</span>
-                    </div>
-                </div>
+        <!-- Box Previsione Statistiche con BARRE -->
+        {% if item.prediction %}
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; min-width: 300px; flex-grow: 1; margin: 0 20px;">
             
-                <div class="stats-bars-container">
-                    
-                    <div class="stat-unit">
-                        <div class="stat-top">
-                            <span class="stat-value">{{ item.prediction.home_total_shots }}</span>
-                            <span class="stat-name">TIRI TOTALI</span>
-                            <span class="stat-value">{{ item.prediction.away_total_shots }}</span>
-                        </div>
-                        <div class="progress-track">
-                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_total_shots }};"></div>
-                            <div class="bar-separator"></div>
-                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_total_shots }};"></div>
-                        </div>
-                    </div>
-            
-                    <div class="stat-unit">
-                        <div class="stat-top">
-                            <span class="stat-value">{{ item.prediction.home_shots_on_target }}</span>
-                            <span class="stat-name">IN PORTA</span>
-                            <span class="stat-value">{{ item.prediction.away_shots_on_target }}</span>
-                        </div>
-                        <div class="progress-track">
-                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_shots_on_target }};"></div>
-                            <div class="bar-separator"></div>
-                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_shots_on_target }};"></div>
-                        </div>
-                    </div>
-            
-                    <div class="stat-unit">
-                        <div class="stat-top">
-                            <span class="stat-value">{{ item.prediction.home_corners }}</span>
-                            <span class="stat-name">CORNER</span>
-                            <span class="stat-value">{{ item.prediction.away_corners }}</span>
-                        </div>
-                        <div class="progress-track">
-                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_corners|add:'0.1' }};"></div>
-                            <div class="bar-separator"></div>
-                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_corners|add:'0.1' }};"></div>
-                        </div>
-                    </div>
-            
-                    <div class="stat-unit">
-                        <div class="stat-top">
-                            <span class="stat-value">{{ item.prediction.home_yellow_cards }}</span>
-                            <span class="stat-name">GIALLI</span>
-                            <span class="stat-value">{{ item.prediction.away_yellow_cards }}</span>
-                        </div>
-                        <div class="progress-track">
-                            <div class="bar home-bar" style="flex-grow: {{ item.prediction.home_yellow_cards|add:'0.1' }};"></div>
-                            <div class="bar-separator"></div>
-                            <div class="bar away-bar" style="flex-grow: {{ item.prediction.away_yellow_cards|add:'0.1' }};"></div>
-                        </div>
-                    </div>
-            
-                </div>
+            <!-- Intestazione Squadre -->
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em; font-weight: bold; color: var(--text-muted);">
+                <span style="color: var(--primary-color)">{{ item.match.home_team.short_name|default:"Casa" }}</span>
+                <span>VS</span>
+                <span style="color: var(--accent-color)">{{ item.match.away_team.short_name|default:"Ospite" }}</span>
             </div>
-            {% else %}
-            <div class="prediction-placeholder">
-                <small>ANALISI IN CORSO...</small>
+
+            <!-- GOAL (In grande) -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: #f8fafc; padding: 5px; border-radius: 5px;">
+                <span style="font-size: 1.4em; font-weight: bold; color: var(--primary-color);">{{ item.prediction.home_goals }}</span>
+                <span style="font-size: 0.8em; color: var(--text-muted);">GOAL PREVISTI</span>
+                <span style="font-size: 1.4em; font-weight: bold; color: var(--accent-color);">{{ item.prediction.away_goals }}</span>
             </div>
-            {% endif %}
+
+            <!-- STATISTICHE CON BARRE -->
+            <!-- Helper: widthratio calcola la percentuale: (valore / totale) * 100 -->
+            
+            <!-- Tiri Totali -->
+            <div class="stat-row">
+                <div class="stat-val">{{ item.prediction.home_total_shots }}</div>
+                <div class="stat-bar-container">
+                    <div class="stat-bar-home" style="width: {% widthratio item.prediction.home_total_shots item.prediction.home_total_shots|add:item.prediction.away_total_shots 100 %}%;"></div>
+                    <div class="stat-bar-away" style="flex-grow: 1;"></div>
+                </div>
+                <div class="stat-val">{{ item.prediction.away_total_shots }}</div>
+            </div>
+            <div style="text-align: center; font-size: 0.6em; color: #94a3b8; margin-top: -5px; margin-bottom: 5px;">TIRI TOTALI</div>
+
+            <!-- Tiri in Porta -->
+            <div class="stat-row">
+                <div class="stat-val">{{ item.prediction.home_shots_on_target }}</div>
+                <div class="stat-bar-container">
+                    <div class="stat-bar-home" style="width: {% widthratio item.prediction.home_shots_on_target item.prediction.home_shots_on_target|add:item.prediction.away_shots_on_target 100 %}%;"></div>
+                    <div class="stat-bar-away" style="flex-grow: 1;"></div>
+                </div>
+                <div class="stat-val">{{ item.prediction.away_shots_on_target }}</div>
+            </div>
+            <div style="text-align: center; font-size: 0.6em; color: #94a3b8; margin-top: -5px; margin-bottom: 5px;">IN PORTA</div>
+
+            <!-- Corner -->
+            <div class="stat-row">
+                <div class="stat-val">{{ item.prediction.home_corners }}</div>
+                <div class="stat-bar-container">
+                    <div class="stat-bar-home" style="width: {% widthratio item.prediction.home_corners item.prediction.home_corners|add:item.prediction.away_corners 100 %}%;"></div>
+                    <div class="stat-bar-away" style="flex-grow: 1;"></div>
+                </div>
+                <div class="stat-val">{{ item.prediction.away_corners }}</div>
+            </div>
+            <div style="text-align: center; font-size: 0.6em; color: #94a3b8; margin-top: -5px; margin-bottom: 5px;">CORNER</div>
+
+            <!-- Falli (Inverso: meno è meglio, ma visivamente usiamo lo stesso standard) -->
+            <div class="stat-row">
+                <div class="stat-val">{{ item.prediction.home_fouls }}</div>
+                <div class="stat-bar-container">
+                    <div class="stat-bar-home" style="width: {% widthratio item.prediction.home_fouls item.prediction.home_fouls|add:item.prediction.away_fouls 100 %}%;"></div>
+                    <div class="stat-bar-away" style="flex-grow: 1;"></div>
+                </div>
+                <div class="stat-val">{{ item.prediction.away_fouls }}</div>
+            </div>
+            <div style="text-align: center; font-size: 0.6em; color: #94a3b8; margin-top: -5px; margin-bottom: 5px;">FALLI</div>
+
+            <!-- Cartellini -->
+            <div class="stat-row">
+                <div class="stat-val">{{ item.prediction.home_yellow_cards }}</div>
+                <div class="stat-bar-container">
+                    <div class="stat-bar-home" style="width: {% widthratio item.prediction.home_yellow_cards item.prediction.home_yellow_cards|add:item.prediction.away_yellow_cards 100 %}%;"></div>
+                    <div class="stat-bar-away" style="flex-grow: 1;"></div>
+                </div>
+                <div class="stat-val">{{ item.prediction.away_yellow_cards }}</div>
+            </div>
+            <div style="text-align: center; font-size: 0.6em; color: #94a3b8; margin-top: -5px; margin-bottom: 5px;">CARTELLINI</div>
+
+            <!-- Fuorigioco -->
+            <div class="stat-row">
+                <div class="stat-val">{{ item.prediction.home_offsides }}</div>
+                <div class="stat-bar-container">
+                    <div class="stat-bar-home" style="width: {% widthratio item.prediction.home_offsides item.prediction.home_offsides|add:item.prediction.away_offsides 100 %}%;"></div>
+                    <div class="stat-bar-away" style="flex-grow: 1;"></div>
+                </div>
+                <div class="stat-val">{{ item.prediction.away_offsides }}</div>
+            </div>
+            <div style="text-align: center; font-size: 0.6em; color: #94a3b8; margin-top: -5px; margin-bottom: 5px;">FUORIGIOCO</div>
+
+            <div style="text-align: center; margin-top: 15px;">
+                <a href="{% url 'match_detail' item.match.id %}" class="btn" style="padding: 6px 12px; font-size: 0.8em;">Vedi Dettagli</a>
+            </div>
+
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 15px; opacity: 0.5;">
+            <div style="font-size: 1.5em;">⌛</div>
+            <small>In attesa...</small>
+        </div>
+        {% endif %}
 
             <!-- SQUADRA OSPITE -->
             <div class="team-info">

@@ -1,3 +1,9 @@
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
 :root {
     /* --- Premium Palette --- */
     --primary-color: #1a2a4c;    /* Deep, rich navy blue */
@@ -137,6 +143,7 @@ body {
 h1, h2, h3 { 
     color: var(--primary-color); 
     font-weight: 700;
+    margin: 0 0 1rem 0;
 }
 
 .btn {
@@ -184,8 +191,8 @@ h1, h2, h3 {
     transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 .match-card-link:hover {
-    transform: translateY(-5px);
-    box-shadow: var(--shadow-lg);
+    /* transform: translateY(-5px); */
+    /* box-shadow: var(--shadow-lg); */
 }
 
 .match-card-anchor {
@@ -217,6 +224,7 @@ h1, h2, h3 {
     width: 120px;
     position: relative;
     z-index: 2; /* Ensures team links are clickable above the main anchor */
+    padding-bottom: 10px;
 }
 
 .team-link {
@@ -230,6 +238,11 @@ h1, h2, h3 {
     width: 60px;
     object-fit: contain;
     margin: 0 auto 10px;
+    transition: transform 0.3s ease; /* Added for smooth animation */
+}
+
+.team-logo:hover {
+    transform: scale(1.1); /* Zoom effect on hover */
 }
 
 .logo-placeholder {
@@ -284,7 +297,7 @@ h1, h2, h3 {
 
 
 /* Form indicators */
-.form-container { display: flex; justify-content: center; gap: 5px; margin-top: 10px; }
+.form-container { display: flex; justify-content: center; gap: 3px; margin-top: 10px; }
 .form-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 .form-W { background-color: var(--success); }
 .form-D { background-color: #adb5bd; } 
@@ -521,4 +534,51 @@ tbody tr:hover {
     .main-score {
         font-size: 1.6rem;
     }
+}
+
+/* --- BARRE STATISTICHE DASHBOARD --- */
+.stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.stat-val {
+    width: 25px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 0.9em;
+    z-index: 2; /* Sopra la barra */
+}
+
+.stat-bar-container {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    height: 6px;
+    background-color: #e2e8f0;
+    border-radius: 3px;
+    margin: 0 10px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* La barra si divide in due: sinistra (Casa) e destra (Ospite) */
+.stat-bar-home {
+    height: 100%;
+    background-color: var(--primary-color); /* Blu */
+}
+.stat-bar-away {
+    height: 100%;
+    background-color: var(--accent-color); /* Verde */
+}
+
+.stat-label {
+    font-size: 0.7em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    width: 60px;
+    text-align: center;
 }

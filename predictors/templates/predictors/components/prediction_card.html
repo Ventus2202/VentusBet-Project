@@ -1,0 +1,46 @@
+{% if item.prediction %}
+<div class="prediction-box">
+    
+    <div class="prediction-header">
+        <div class="score-container">
+            <span class="main-score home-score">{{ item.prediction.home_goals }}</span>
+            <div class="score-label-group">
+                <span class="vs-label">PREVISIONE</span>
+            </div>
+            <span class="main-score away-score">{{ item.prediction.away_goals }}</span>
+        </div>
+    </div>
+
+    <div class="stats-bars-container">
+        
+        {% with label="TIRI TOTALI" home_value=item.prediction.home_total_shots away_value=item.prediction.away_total_shots %}
+            {% include "predictors/components/stat_bar.html" %}
+        {% endwith %}
+
+        {% with label="IN PORTA" home_value=item.prediction.home_shots_on_target away_value=item.prediction.away_shots_on_target %}
+            {% include "predictors/components/stat_bar.html" %}
+        {% endwith %}
+
+        {% with label="CORNER" home_value=item.prediction.home_corners away_value=item.prediction.away_corners %}
+            {% include "predictors/components/stat_bar.html" %}
+        {% endwith %}
+
+        {% with label="FALLI" home_value=item.prediction.home_fouls away_value=item.prediction.away_fouls %}
+            {% include "predictors/components/stat_bar.html" %}
+        {% endwith %}
+
+        {% with label="CARTELLINI GIALLI" home_value=item.prediction.home_yellow_cards away_value=item.prediction.away_yellow_cards %}
+            {% include "predictors/components/stat_bar.html" %}
+        {% endwith %}
+
+        {% with label="FUORIGIOCO" home_value=item.prediction.home_offsides away_value=item.prediction.away_offsides %}
+            {% include "predictors/components/stat_bar.html" %}
+        {% endwith %}
+
+    </div>
+</div>
+{% else %}
+<div class="prediction-placeholder">
+    <small>ANALISI IN CORSO...</small>
+</div>
+{% endif %}

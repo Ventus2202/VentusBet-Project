@@ -1,0 +1,12 @@
+<div class="stat-unit">
+    <div class="stat-top">
+        <span class="stat-value">{{ home_value }}</span>
+        <span class="stat-name">{{ label }}</span>
+        <span class="stat-value">{{ away_value }}</span>
+    </div>
+    <div class="progress-track">
+        <div class="bar home-bar" style="flex-grow: {{ home_value|add:'0.1' }};"></div>
+        <div class="bar-separator"></div>
+        <div class="bar away-bar" style="flex-grow: {{ away_value|add:'0.1' }};"></div>
+    </div>
+</div>
