@@ -1,5 +1,11 @@
-from .utils import generate_slip, get_multi_market_opportunities
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import user_passes_test
+from .utils import generate_slip, get_multi_market_opportunities, get_form_sequence
 from .models import Match, MatchResult, Prediction, Team, Season, TeamFormSnapshot
+from django.db.models import Q
+
+def is_admin(user):
+    return user.is_superuser
 
 # ... (other code between imports and dashboard)
 

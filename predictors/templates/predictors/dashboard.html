@@ -36,125 +36,102 @@
     <h2>🚀 Prossimi Match</h2>
     
     {% for item in upcoming_matches %}
-    <a href="{% url 'match_detail' item.match.id %}" style="text-decoration: none; color: inherit; display: block;">
-        <div class="card match-card">
-        
-        <!-- Squadre con Logo e Forma -->
-        <div>
-            <div style="font-size: 0.9em; color: var(--primary-color); font-weight: bold; margin-bottom: 10px;">
-                {{ item.match.date_time|date:"D d M - H:i" }}
-            </div>
-            
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <!-- SQUADRA CASA -->
-                <div style="text-align: center; width: 100px;">
-                    <a href="{% url 'team_detail' item.match.home_team.id %}" style="text-decoration: none; color: inherit; display: block;">
-                    {% if item.match.home_team.logo %}
-                        <img src="{{ item.match.home_team.logo.url }}" style="height: 50px; width: auto; object-fit: contain;">
-                    {% else %}
-                        <div style="height: 50px; width: 50px; background: #ddd; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">🏠</div>
-                    {% endif %}
-                    <div style="font-size: 0.9em; font-weight: bold; margin-top: 5px;">{{ item.match.home_team.short_name|default:item.match.home_team.name }}</div>
-                    </a>
-                    
-                    <!-- PALLINI FORMA -->
-                    <div class="form-container">
-                        {% for res in item.home_form %}
-                            <span class="form-dot form-{{ res }}" title="{{ res }}"></span>
-                        {% endfor %}
-                    </div>
-                </div>
+    <div class="card match-card-link">
+        <a href="{% url 'match_detail' item.match.id %}" class="match-card-anchor"></a>
+        <div class="match-card-header">
+            {{ item.match.date_time|date:"D d M - H:i" }}
+        </div>
 
-                <div style="font-size: 0.8em; color: var(--text-muted); padding-top: 15px;">VS</div>
-
-                <!-- SQUADRA OSPITE -->
-                <div style="text-align: center; width: 100px;">
-                    <a href="{% url 'team_detail' item.match.away_team.id %}" style="text-decoration: none; color: inherit; display: block;">
-                    {% if item.match.away_team.logo %}
-                        <img src="{{ item.match.away_team.logo.url }}" style="height: 50px; width: auto; object-fit: contain;">
-                    {% else %}
-                        <div style="height: 50px; width: 50px; background: #ddd; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">✈️</div>
-                    {% endif %}
-                    <div style="font-size: 0.9em; font-weight: bold; margin-top: 5px;">{{ item.match.away_team.short_name|default:item.match.away_team.name }}</div>
-                    </a>
-
-                    <!-- PALLINI FORMA -->
-                    <div class="form-container">
-                        {% for res in item.away_form %}
-                            <span class="form-dot form-{{ res }}" title="{{ res }}"></span>
-                        {% endfor %}
-                    </div>
+        <div class="match-card-content">
+            <!-- SQUADRA CASA -->
+            <div class="team-info">
+                <a href="{% url 'team_detail' item.match.home_team.id %}" class="team-link">
+                {% if item.match.home_team.logo %}
+                    <img src="{{ item.match.home_team.logo.url }}" class="team-logo" alt="{{ item.match.home_team.name }} logo">
+                {% else %}
+                    <div class="logo-placeholder">🏠</div>
+                {% endif %}
+                <div class="team-name">{{ item.match.home_team.short_name|default:item.match.home_team.name }}</div>
+                </a>
+                <div class="form-container">
+                    {% for res in item.home_form %}
+                        <span class="form-dot form-{{ res }}" title="{{ res }}"></span>
+                    {% endfor %}
                 </div>
             </div>
-        </div>
 
-        <!-- Box Previsione Statistiche -->
-        {% if item.prediction %}
-        <div class="prediction-table">
-            <table>
-                <thead>
-                    <tr>
-                        <th>{{ item.match.home_team.short_name|default:"Casa" }}</th>
-                        <th>STAT</th>
-                        <th>{{ item.match.away_team.short_name|default:"Ospite" }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td data-label="Goal">{{ item.prediction.home_goals }}</td>
-                        <td>GOAL</td>
-                        <td data-label="Goal">{{ item.prediction.away_goals }}</td>
-                    </tr>
-                    <tr>
-                        <td data-label="Tiri Tot">{{ item.prediction.home_total_shots }}</td>
-                        <td>TIRI TOT</td>
-                        <td data-label="Tiri Tot">{{ item.prediction.away_total_shots }}</td>
-                    </tr>
-                    <tr>
-                        <td data-label="In Porta">{{ item.prediction.home_shots_on_target }}</td>
-                        <td>IN PORTA</td>
-                        <td data-label="In Porta">{{ item.prediction.away_shots_on_target }}</td>
-                    </tr>
-                    <tr>
-                        <td data-label="Corner">{{ item.prediction.home_corners }}</td>
-                        <td>CORNER</td>
-                        <td data-label="Corner">{{ item.prediction.away_corners }}</td>
-                    </tr>
-                    <tr>
-                        <td data-label="Falli">{{ item.prediction.home_fouls }}</td>
-                        <td>FALLI</td>
-                        <td data-label="Falli">{{ item.prediction.away_fouls }}</td>
-                    </tr>
-                    <tr>
-                        <td data-label="Gialli">{{ item.prediction.home_yellow_cards }}</td>
-                        <td>GIALLI</td>
-                        <td data-label="Gialli">{{ item.prediction.away_yellow_cards }}</td>
-                    </tr>
-                </tbody>
-            </table>
+            <!-- Box Previsione Statistiche -->
+            {% if item.prediction %}
+            <div class="prediction-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>{{ item.match.home_team.short_name|default:"Casa" }}</th>
+                            <th>STAT</th>
+                            <th>{{ item.match.away_team.short_name|default:"Ospite" }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>{{ item.prediction.home_goals }}</td>
+                            <td>GOAL</td>
+                            <td>{{ item.prediction.away_goals }}</td>
+                        </tr>
+                        <tr>
+                            <td>{{ item.prediction.home_total_shots }}</td>
+                            <td>TIRI TOT</td>
+                            <td>{{ item.prediction.away_total_shots }}</td>
+                        </tr>
+                        <tr>
+                            <td>{{ item.prediction.home_shots_on_target }}</td>
+                            <td>IN PORTA</td>
+                            <td>{{ item.prediction.away_shots_on_target }}</td>
+                        </tr>
+                        <tr>
+                            <td>{{ item.prediction.home_corners }}</td>
+                            <td>CORNER</td>
+                            <td>{{ item.prediction.away_corners }}</td>
+                        </tr>
+                         <tr>
+                            <td>{{ item.prediction.home_fouls }}</td>
+                            <td>FALLI</td>
+                            <td>{{ item.prediction.away_fouls }}</td>
+                        </tr>
+                        <tr>
+                            <td>{{ item.prediction.home_yellow_cards }}</td>
+                            <td>GIALLI</td>
+                            <td>{{ item.prediction.away_yellow_cards }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="prediction-placeholder">
+                <div style="font-size: 1.5em;">⌛</div>
+                <small>In attesa...</small>
+            </div>
+            {% endif %}
+
+            <!-- SQUADRA OSPITE -->
+            <div class="team-info">
+                <a href="{% url 'team_detail' item.match.away_team.id %}" class="team-link">
+                {% if item.match.away_team.logo %}
+                    <img src="{{ item.match.away_team.logo.url }}" class="team-logo" alt="{{ item.match.away_team.name }} logo">
+                {% else %}
+                    <div class="logo-placeholder">✈️</div>
+                {% endif %}
+                <div class="team-name">{{ item.match.away_team.short_name|default:item.match.away_team.name }}</div>
+                </a>
+                <div class="form-container">
+                    {% for res in item.away_form %}
+                        <span class="form-dot form-{{ res }}" title="{{ res }}"></span>
+                    {% endfor %}
+                </div>
+            </div>
         </div>
-        {% else %}
-        <div style="text-align: center; padding: 15px; opacity: 0.5;">
-            <div style="font-size: 1.5em;">⌛</div>
-            <small>In attesa...</small>
-        </div>
-        {% endif %}
-        {% if item.opportunities %}
-        <div class="opportunities-section">
-            <h4>Top 3 Consigli</h4>
-            <ul>
-                {% for op in item.opportunities|slice:":3" %}
-                <li>
-                    <span>{{ op.label }} <small>({{ op.description }})</small></span>
-                    <strong>Score: {{ op.score|floatformat:0 }}</strong>
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
     </div>
-</a>
-        {% empty %}    <p style="color: var(--text-muted);">Nessuna partita programmata al momento.</p>
+    {% empty %}
+    <p style="color: var(--text-muted);">Nessuna partita programmata al momento.</p>
     {% endfor %}
 </div>
 

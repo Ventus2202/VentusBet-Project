@@ -1,8 +1,18 @@
+from .models import TeamFormSnapshot
 """
 Advanced Multi-Market Betting Recommendation Engine for VentusBet
 This engine uses a scoring system based on a wide range of predicted stats
 to generate nuanced betting tips across different market categories.
 """
+
+def get_form_sequence(team):
+    """
+    Retrieves the form sequence for a given team from its latest TeamFormSnapshot.
+    """
+    latest_snapshot = TeamFormSnapshot.objects.filter(team=team).order_by('-match__date_time').first()
+    if latest_snapshot:
+        return latest_snapshot.form_sequence
+    return ""
 
 def get_multi_market_opportunities(prediction, home_snap=None, away_snap=None):
     """
