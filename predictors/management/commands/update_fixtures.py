@@ -1,5 +1,6 @@
 import requests
 from django.core.management.base import BaseCommand
+from django.conf import settings
 from django.utils import timezone
 from datetime import datetime
 from predictors.models import Match, Team, Season, League
@@ -9,7 +10,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **kwargs):
         # --- CONFIGURAZIONE ---
-        API_KEY = '1ce4f1b57d5942c6bf9bb2284d87cc5e'  # <--- METTI LA TUA KEY QUI
+        API_KEY = settings.FOOTBALL_DATA_API_KEY
+        if not API_KEY:
+            self.stdout.write(self.style.ERROR("API Key non trovata nelle impostazioni (FOOTBALL_DATA_API_KEY)."))
+            return
+
         COMPETITION_ID = '2019' # 2019 è solitamente l'ID della Serie A (verifica sulla doc)
         URL = f'https://api.football-data.org/v4/competitions/{COMPETITION_ID}/matches?status=SCHEDULED'
         
@@ -79,30 +84,56 @@ class Command(BaseCommand):
 
     def get_team_fuzzy(self, api_name):
         """
-        Cerca di trovare la squadra nel DB anche se il nome è leggermente diverso.
-        Per ora facciamo una ricerca esatta o 'contains', poi si può migliorare.
+        Cerca di trovare la squadra nel DB usando un mapping esplicito e sicuro.
         """
         # 1. Tentativo esatto
         try:
             return Team.objects.get(name__iexact=api_name)
         except Team.DoesNotExist:
             pass
-            
-        # 2. Tentativo "contiene" (es. "Inter" in "FC Internazionale")
-        # Attenzione: potrebbe essere rischioso, meglio gestire un dizionario di mapping manuale se fallisce.
-        try:
-            # MAPPING MANUALE (Esempi comuni Serie A vs API)
-            mapping = {
-                'Internazionale Milano': 'Inter',
-                'AC Milan': 'Milan',
-                'AS Roma': 'Roma',
-                'SS Lazio': 'Lazio',
-                'Hellas Verona FC': 'Verona'
-            }
-            if api_name in mapping:
-                return Team.objects.get(name__iexact=mapping[api_name])
-            
-            # Fallback generico
-            return Team.objects.get(name__icontains=api_name.split(' ')[0]) 
-        except (Team.DoesNotExist, Team.MultipleObjectsReturned):
-            return None
+        
+        # 2. Mapping Esplicito (API Name -> DB Name)
+        # Aggiornare questo dizionario se cambiano le squadre o i nomi API
+        mapping = {
+            'FC Internazionale Milano': 'Inter',
+            'Inter': 'Inter',
+            'AC Milan': 'Milan',
+            'Milan': 'Milan',
+            'AS Roma': 'Roma',
+            'SS Lazio': 'Lazio',
+            'Lazio': 'Lazio',
+            'Hellas Verona FC': 'Verona',
+            'Verona': 'Verona',
+            'Juventus FC': 'Juventus',
+            'Juventus': 'Juventus',
+            'Atalanta BC': 'Atalanta',
+            'Bologna FC 1909': 'Bologna',
+            'ACF Fiorentina': 'Fiorentina',
+            'Udinese Calcio': 'Udinese',
+            'Torino FC': 'Torino',
+            'SSC Napoli': 'Napoli',
+            'Napoli': 'Napoli',
+            'Genoa CFC': 'Genoa',
+            'Cagliari Calcio': 'Cagliari',
+            'US Lecce': 'Lecce',
+            'Empoli FC': 'Empoli',
+            'AC Monza': 'Monza',
+            'Frosinone Calcio': 'Frosinone',
+            'US Salernitana 1919': 'Salernitana',
+            'US Sassuolo Calcio': 'Sassuolo',
+            'Parma Calcio 1913': 'Parma',
+            'Como 1907': 'Como',
+            'Venezia FC': 'Venezia'
+        }
+
+        if api_name in mapping:
+            db_name = mapping[api_name]
+            try:
+                return Team.objects.get(name__iexact=db_name)
+            except Team.DoesNotExist:
+                self.stdout.write(self.style.ERROR(f"Team '{db_name}' (da mapping '{api_name}') non trovato nel DB!"))
+                return None
+        
+        # Nessun tentativo "fuzzy" rischioso. Se non è mappato, è un errore che va gestito manualmente.
+        self.stdout.write(self.style.WARNING(f"Nessun mapping trovato per '{api_name}'. Aggiungilo in update_fixtures.py"))
+        return None

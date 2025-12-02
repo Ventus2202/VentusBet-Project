@@ -1,6 +1,6 @@
 from django.db import models
-from django.contrib.postgres.fields import ArrayField # Opzionale, se servisse in futuro
-# Nota: JSONField è built-in in Django 3.0+ per tutti i DB, ma su Postgres è nativo e velocissimo.
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.contrib.postgres.fields import ArrayField 
 
 # ==========================================
 # 1. MODULO ANAGRAFICA (Statico)
@@ -40,6 +40,9 @@ class Team(models.Model):
     stadium_capacity = models.IntegerField(blank=True, null=True)
     pitch_type = models.CharField(max_length=20, choices=PITCH_CHOICES, default='GRASS', verbose_name="Tipo Campo")
     logo = models.ImageField(upload_to='team_logos/', blank=True, null=True, verbose_name="Stemma Squadra")
+    
+    # Nuovi campi Step 2 (Pressione/Aspettative)
+    market_value = models.FloatField(null=True, blank=True, verbose_name="Valore Rosa (mln €)")
 
     # Coordinate per calcolo distanza trasferta (Lat, Lon)
     latitude = models.FloatField(blank=True, null=True)
@@ -51,6 +54,27 @@ class Team(models.Model):
     class Meta:
         verbose_name = "Squadra"
         verbose_name_plural = "Squadre"
+
+class Rivalry(models.Model):
+    """
+    Definisce le rivalità storiche (Derby) per il calcolo dei fattori psicologici.
+    """
+    team1 = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='rivalries_1')
+    team2 = models.ForeignKey(Team, on_delete=models.CASCADE, related_name='rivalries_2')
+    intensity = models.IntegerField(
+        default=10, 
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Intensità della rivalità da 1 a 10"
+    )
+    description = models.CharField(max_length=100, blank=True, verbose_name="Nome Derby")
+
+    def __str__(self):
+        return f"{self.team1} vs {self.team2} ({self.description})"
+
+    class Meta:
+        verbose_name = "Rivalità / Derby"
+        verbose_name_plural = "Rivalità / Derby"
+        unique_together = ('team1', 'team2')
 
 
 # ==========================================
@@ -123,6 +147,16 @@ class TeamFormSnapshot(models.Model):
     avg_xg_last_5 = models.FloatField(default=0.0, verbose_name="Media xG fatti (ultime 5)")
     avg_goals_scored_last_5 = models.FloatField(default=0.0, verbose_name="Media Goal fatti (ultime 5)")
     avg_goals_conceded_last_5 = models.FloatField(default=0.0, verbose_name="Media Goal subiti (ultime 5)")
+
+    # --- METRICHE NEXT-GEN (Step 1 Upgrade) ---
+    xg_ratio_last_5 = models.FloatField(default=0.5, verbose_name="xG Ratio Dominio")
+    efficiency_attack_last_5 = models.FloatField(default=0.0, verbose_name="Efficienza Attacco (Goal - xG)")
+    efficiency_defense_last_5 = models.FloatField(default=0.0, verbose_name="Efficienza Difesa (xG Subiti - Goal Subiti)")
+    goal_volatility_last_5 = models.FloatField(default=0.0, verbose_name="Volatilità Goal (Deviazione Std)")
+
+    # --- FATTORI PSICOLOGICI (Step 2 Upgrade) ---
+    is_derby = models.IntegerField(default=0, verbose_name="Intensità Derby (0-10)")
+    pressure_index = models.FloatField(default=0.0, verbose_name="Indice Pressione (0-100)")
 
     class Meta:
         verbose_name = "Snapshot Forma"

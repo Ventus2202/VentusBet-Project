@@ -44,21 +44,7 @@
 
         <div class="match-card-content">
             <!-- SQUADRA CASA -->
-            <div class="team-info">
-                <a href="{% url 'team_detail' item.match.home_team.id %}" class="team-link">
-                {% if item.match.home_team.logo %}
-                    <img src="{{ item.match.home_team.logo.url }}" class="team-logo" alt="{{ item.match.home_team.name }} logo">
-                {% else %}
-                    <div class="logo-placeholder">🏠</div>
-                {% endif %}
-                <div class="team-name">{{ item.match.home_team.short_name|default:item.match.home_team.name }}</div>
-                </a>
-                <div class="form-container">
-                    {% for res in item.home_form %}
-                        <span class="form-dot form-{{ res }}" title="{{ res }}"></span>
-                    {% endfor %}
-                </div>
-            </div>
+            {% include 'predictors/components/team_info.html' with team=item.match.home_team form=item.home_form %}
 
         <!-- Box Previsione Statistiche con BARRE -->
         {% if item.prediction %}
@@ -160,21 +146,7 @@
         {% endif %}
 
             <!-- SQUADRA OSPITE -->
-            <div class="team-info">
-                <a href="{% url 'team_detail' item.match.away_team.id %}" class="team-link">
-                {% if item.match.away_team.logo %}
-                    <img src="{{ item.match.away_team.logo.url }}" class="team-logo" alt="{{ item.match.away_team.name }} logo">
-                {% else %}
-                    <div class="logo-placeholder">✈️</div>
-                {% endif %}
-                <div class="team-name">{{ item.match.away_team.short_name|default:item.match.away_team.name }}</div>
-                </a>
-                <div class="form-container">
-                    {% for res in item.away_form %}
-                        <span class="form-dot form-{{ res }}" title="{{ res }}"></span>
-                    {% endfor %}
-                </div>
-            </div>
+            {% include 'predictors/components/team_info.html' with team=item.match.away_team form=item.away_form %}
         </div>
     </div>
     {% empty %}
@@ -186,42 +158,24 @@
 <div>
     <h2>🏁 Ultimi Risultati</h2>
     
-    {% for item in recent_matches %}
-    <div class="card match-card">
-        
-        <div>
-            <div>
-                {{ item.match.date_time|date:"d M Y" }}
+    <div class="recent-matches-list">
+        {% for item in recent_matches %}
+        <div class="card recent-match-card">
+            <div class="recent-match-info">
+                <span class="recent-match-date">{{ item.match.date_time|date:"d M Y" }}</span>
+                {% include 'predictors/components/team_info.html' with team=item.match.home_team team_link_disabled=True %}
             </div>
-            
-            <!-- Loghi Piccoli nello storico -->
-            <a href="{% url 'team_detail' item.match.home_team.id %}" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 5px;">
-            {% if item.match.home_team.logo %}
-                <img src="{{ item.match.home_team.logo.url }}" style="height: 30px;">
-            {% endif %}
-            <div>
-                {{ item.match.home_team.short_name|default:item.match.home_team.name }}
-            </div>
-            </a>
-            
-            <span>-</span>
 
-            <a href="{% url 'team_detail' item.match.away_team.id %}" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 5px;">
-            <div>
-                {{ item.match.away_team.short_name|default:item.match.away_team.name }}
+            <div class="recent-match-score">
+                {{ item.match.result.home_goals }} - {{ item.match.result.away_goals }}
             </div>
-            {% if item.match.away_team.logo %}
-                <img src="{{ item.match.away_team.logo.url }}" style="height: 30px;">
-            {% endif %}
-            </a>
-        </div>
 
-        <!-- Risultato Reale -->
-        <div>
-            {{ item.match.result.home_goals }} - {{ item.match.result.away_goals }}
+            <div class="recent-match-info">
+                {% include 'predictors/components/team_info.html' with team=item.match.away_team team_link_disabled=True %}
+            </div>
         </div>
+        {% endfor %}
     </div>
-    {% endfor %}
 </div>
 
 {% endblock %}

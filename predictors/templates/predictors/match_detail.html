@@ -2,140 +2,171 @@
 {% load static %}
 
 {% block content %}
-<!-- Intestazione Match -->
-<div class="card" style="text-align: center;">
-    <div>
-        {{ match.league.name }} - Giornata {{ match.round_number }} - {{ match.date_time|date:"D d M Y, H:i" }}
-    </div>
-
-    <div style="display: flex; justify-content: center; align-items: center; gap: 40px; margin: 20px 0;">
-        <!-- Casa -->
-        <div>
-            <a href="{% url 'team_detail' match.home_team.id %}">
-            {% if match.home_team.logo %}
-                <img src="{{ match.home_team.logo.url }}" style="height: 80px;">
-            {% else %}
-                <div style="font-size: 3em;">🏠</div>
-            {% endif %}
-            <h2>{{ match.home_team.name }}</h2>
-            </a>
-            <div class="form-container">
-                {% for res in home_form %}<span class="form-dot form-{{ res }}"></span>{% endfor %}
-            </div>
-        </div>
-
-        <div>VS</div>
-
-        <!-- Ospite -->
-        <div>
-            <a href="{% url 'team_detail' match.away_team.id %}">
-            {% if match.away_team.logo %}
-                <img src="{{ match.away_team.logo.url }}" style="height: 80px;">
-            {% else %}
-                <div style="font-size: 3em;">✈️</div>
-            {% endif %}
-            <h2>{{ match.away_team.name }}</h2>
-            </a>
-            <div class="form-container">
-                {% for res in away_form %}<span class="form-dot form-{{ res }}"></span>{% endfor %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Sezione Analisi IA -->
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+<div class="container">
     
-    <!-- 1. Grafico Previsione -->
-    <div class="card">
-        <h3>📊 Previsione IA (Confronto)</h3>
-        <canvas id="predictionChart"></canvas>
-    </div>
+    <!-- 1. MATCH HEADER -->
+    <div class="card match-header-card">
+        <div class="match-meta">
+            {{ match.date_time|date:"l d F Y, H:i" }} | {{ match.stadium_name|default:"Stadio Olimpico" }}
+            {% if match.status == 'FINISHED' %}
+                <span class="badge badge-success" style="background: #28a745; color: white; padding: 2px 8px; border-radius: 4px; margin-left: 10px;">FINALE</span>
+            {% endif %}
+        </div>
 
-    <!-- 2. Dati Statistici (Snapshot) -->
-    <div class="card">
-        <h3>📈 Forma & Statistiche (Ultime 5)</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>{{ match.home_team.short_name }}</th>
-                    <th>METRICA</th>
-                    <th>{{ match.away_team.short_name }}</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td data-label="Media xG">{{ home_snap.avg_xg_last_5|floatformat:2 }}</td>
-                    <td>Media xG</td>
-                    <td data-label="Media xG">{{ away_snap.avg_xg_last_5|floatformat:2 }}</td>
-                </tr>
-                <tr>
-                    <td data-label="Goal Fatti">{{ home_snap.avg_goals_scored_last_5|floatformat:1 }}</td>
-                    <td>Goal Fatti</td>
-                    <td data-label="Goal Fatti">{{ away_snap.avg_goals_scored_last_5|floatformat:1 }}</td>
-                </tr>
-                <tr>
-                    <td data-label="Goal Subiti">{{ home_snap.avg_goals_conceded_last_5|floatformat:1 }}</td>
-                    <td>Goal Subiti</td>
-                    <td data-label="Goal Subiti">{{ away_snap.avg_goals_conceded_last_5|floatformat:1 }}</td>
-                </tr>
-                <tr>
-                    <td data-label="ELO">{{ home_snap.elo_rating|floatformat:0 }}</td>
-                    <td>Power Rating (ELO)</td>
-                    <td data-label="ELO">{{ away_snap.elo_rating|floatformat:0 }}</td>
-                </tr>
-            </tbody>
-        </table>
-        
-        <div class="total-goals-prediction">
-            <div>PREVISIONE GOAL TOTALI</div>
-            <div>{{ prediction.home_goals|add:prediction.away_goals }}</div>
+        <div class="match-teams-container">
+            <!-- HOME TEAM -->
+            <div class="team-box">
+                <a href="{% url 'team_detail' match.home_team.id %}" class="team-link">
+                    {% if match.home_team.logo %}
+                        <img src="{{ match.home_team.logo.url }}" alt="{{ match.home_team.name }}" class="team-logo-img">
+                    {% else %}
+                        <div class="team-logo-placeholder">{{ match.home_team.name|slice:":1" }}</div>
+                    {% endif %}
+                    <h2>{{ match.home_team.name }}</h2>
+                </a>
+                <!-- Form Sequence -->
+                <div class="form-container">
+                    {% for res in home_form %}
+                        <span class="form-dot form-{{ res }}"></span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- VS / SCORE -->
+            <div class="vs-separator">
+                {% if match.status == 'FINISHED' %}
+                    <span class="final-score">{{ match.result.home_goals }} - {{ match.result.away_goals }}</span>
+                {% else %}
+                    VS
+                {% endif %}
+            </div>
+
+            <!-- AWAY TEAM -->
+            <div class="team-box">
+                <a href="{% url 'team_detail' match.away_team.id %}" class="team-link">
+                    {% if match.away_team.logo %}
+                        <img src="{{ match.away_team.logo.url }}" alt="{{ match.away_team.name }}" class="team-logo-img">
+                    {% else %}
+                        <div class="team-logo-placeholder">{{ match.away_team.name|slice:":1" }}</div>
+                    {% endif %}
+                    <h2>{{ match.away_team.name }}</h2>
+                </a>
+                <!-- Form Sequence -->
+                <div class="form-container">
+                    {% for res in away_form %}
+                        <span class="form-dot form-{{ res }}"></span>
+                    {% endfor %}
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- 2. SMART INSIGHTS (Fattori Psicologici) -->
+    <div class="match-analysis-grid">
+        <!-- PSYCHOLOGY & CONTEXT -->
+        <div class="card">
+            <h3>Fattori Chiave</h3>
+            
+            <div class="insight-row">
+                <div class="insight-label">
+                    <strong>Rivalità</strong>
+                    <div>Intensità Match</div>
+                </div>
+                <div class="insight-value">
+                    {% if rivalry %}
+                        <span class="highlight">{{ rivalry.description }}</span>
+                    {% elif home_snap.is_derby > 0 %}
+                        <span style="font-weight: bold;">Alta Intensità</span>
+                    {% else %}
+                        <span class="muted">Standard</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="insight-row">
+                <div class="insight-label">
+                    <strong>Pressione Classifica (Home)</strong>
+                </div>
+                <!-- Dynamic width/color must remain inline -->
+                <div class="progress-track" style="width: 50%; height: 8px;"> 
+                    <div class="bar" style="width: {{ home_snap.pressure_index }}%; background: {% if home_snap.pressure_index > 80 %}var(--danger){% else %}var(--primary-color){% endif %};"></div>
+                </div>
+            </div>
+
+            <div class="insight-row">
+                <div class="insight-label">
+                    <strong>Pressione Classifica (Away)</strong>
+                </div>
+                <div class="progress-track" style="width: 50%; height: 8px;">
+                    <div class="bar" style="width: {{ away_snap.pressure_index }}%; background: {% if away_snap.pressure_index > 80 %}var(--danger){% else %}var(--accent-color){% endif %};"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ADVANCED METRICS (Step 1 Features) -->
+        <div class="card">
+            <h3>Metriche Avanzate</h3>
+            
+            <!-- xG Ratio -->
+            {% include 'predictors/components/stat_bar.html' with label="xG Ratio" val_home=home_snap.xg_ratio_last_5|floatformat:2 val_away=away_snap.xg_ratio_last_5|floatformat:2 %}
+            
+            <!-- Efficiency (Cinismo) -->
+            <div style="margin-top: 15px;">
+                {% include 'predictors/components/stat_bar.html' with label="Efficienza Attacco" val_home=home_snap.efficiency_attack_last_5 val_away=away_snap.efficiency_attack_last_5 %}
+            </div>
+
+            <!-- Volatility -->
+            <div style="margin-top: 15px; display: flex; justify-content: space-between; font-size: 0.9em;">
+                <div>
+                    <span style="color: var(--text-muted);">Volatilità Casa:</span> 
+                    <strong>{{ home_snap.goal_volatility_last_5|floatformat:2 }}</strong>
+                </div>
+                <div>
+                    <span style="color: var(--text-muted);">Volatilità Ospite:</span> 
+                    <strong>{{ away_snap.goal_volatility_last_5|floatformat:2 }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. AI PREDICTION (Core) -->
+    {% if prediction %}
+    <div class="card card-prediction">
+        <h3 class="prediction-title">Previsione AI</h3>
+        
+        <div class="score-container" style="margin: 20px 0;">
+            <div class="main-score">{{ prediction.home_goals }}</div>
+            <div class="score-label-group">
+                <span class="vs-label">GOAL PREVISTI</span>
+            </div>
+            <div class="main-score">{{ prediction.away_goals }}</div>
+        </div>
+
+        <div class="stats-bars-container">
+            {% include 'predictors/components/stat_bar.html' with label="Possesso Palla" val_home=50 val_away=50 %} <!-- Placeholder for Possession -->
+            {% include 'predictors/components/stat_bar.html' with label="Tiri Totali" val_home=prediction.home_total_shots val_away=prediction.away_total_shots %}
+            {% include 'predictors/components/stat_bar.html' with label="Tiri in Porta" val_home=prediction.home_shots_on_target val_away=prediction.away_shots_on_target %}
+            {% include 'predictors/components/stat_bar.html' with label="Corner" val_home=prediction.home_corners val_away=prediction.away_corners %}
+            {% include 'predictors/components/stat_bar.html' with label="Fuorigioco" val_home=prediction.home_offsides val_away=prediction.away_offsides %}
+            {% include 'predictors/components/stat_bar.html' with label="Cartellini Gialli" val_home=prediction.home_yellow_cards val_away=prediction.away_yellow_cards %}
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="text-align: center; color: var(--text-muted);">Previsione non ancora disponibile per questo match.</p>
+    </div>
+    {% endif %}
+
+    <!-- 4. LINEUPS (Future Placeholder) -->
+    <div class="card">
+        <h3>Formazioni Probabili</h3>
+        <div class="lineup-placeholder">
+            <div style="text-align: center;">
+                <div class="lineup-icon">🏟️</div>
+                <p>Modulo Formazioni in arrivo...</p>
+            </div>
+        </div>
+    </div>
+
 </div>
-
-<!-- Script Grafici -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-    const ctx = document.getElementById('predictionChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Goal', 'Tiri Tot', 'In Porta', 'Corner', 'Falli', 'Gialli'],
-            datasets: [
-                {
-                    label: '{{ match.home_team.short_name }}',
-                    data: [
-                        {{ prediction.home_goals }}, 
-                        {{ prediction.home_total_shots }},
-                        {{ prediction.home_shots_on_target }},
-                        {{ prediction.home_corners }},
-                        {{ prediction.home_fouls }},
-                        {{ prediction.home_yellow_cards }}
-                    ],
-                    backgroundColor: 'var(--primary-color)'
-                },
-                {
-                    label: '{{ match.away_team.short_name }}',
-                    data: [
-                        {{ prediction.away_goals }}, 
-                        {{ prediction.away_total_shots }},
-                        {{ prediction.away_shots_on_target }},
-                        {{ prediction.away_corners }},
-                        {{ prediction.away_fouls }},
-                        {{ prediction.away_yellow_cards }}
-                    ],
-                    backgroundColor: 'var(--accent-color)'
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: { beginAtZero: true }
-            }
-        }
-    });
-</script>
-
 {% endblock %}

@@ -1,0 +1,45 @@
+{% comment %}
+Renders a table comparing two sets of team statistics.
+
+**Context:**
+- `home_team`: The home Team object.
+- `away_team`: The away Team object.
+- `home_snap`: The TeamFormSnapshot for the home team.
+- `away_snap`: The TeamFormSnapshot for the away team.
+{% endcomment %}
+
+{% if home_snap and away_snap %}
+<table class="stats-table">
+    <thead>
+        <tr>
+            <th>{{ home_team.short_name }}</th>
+            <th>Metrica</th>
+            <th>{{ away_team.short_name }}</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td data-label="Media xG">{{ home_snap.avg_xg_last_5|floatformat:2 }}</td>
+            <td data-label="Metrica">Media xG</td>
+            <td data-label="Media xG">{{ away_snap.avg_xg_last_5|floatformat:2 }}</td>
+        </tr>
+        <tr>
+            <td data-label="Goal Fatti">{{ home_snap.avg_goals_scored_last_5|floatformat:1 }}</td>
+            <td data-label="Metrica">Goal Fatti</td>
+            <td data-label="Goal Fatti">{{ away_snap.avg_goals_scored_last_5|floatformat:1 }}</td>
+        </tr>
+        <tr>
+            <td data-label="Goal Subiti">{{ home_snap.avg_goals_conceded_last_5|floatformat:1 }}</td>
+            <td data-label="Metrica">Goal Subiti</td>
+            <td data-label="Goal Subiti">{{ away_snap.avg_goals_conceded_last_5|floatformat:1 }}</td>
+        </tr>
+        <tr>
+            <td data-label="ELO">{{ home_snap.elo_rating|floatformat:0 }}</td>
+            <td data-label="Metrica">Power Rating (ELO)</td>
+            <td data-label="ELO">{{ away_snap.elo_rating|floatformat:0 }}</td>
+        </tr>
+    </tbody>
+</table>
+{% else %}
+    <p>Dati statistici non disponibili.</p>
+{% endif %}

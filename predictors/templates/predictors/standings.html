@@ -26,11 +26,11 @@
                 </td>
                 
                 <td data-label="Squadra">
-                    <a href="{% url 'team_detail' row.team.id %}" style="text-decoration: none; color: inherit; font-weight: bold; display: flex; align-items: center; gap: 10px;">
-                        {% if row.team.logo %}
-                            <img src="{{ row.team.logo.url }}" style="height: 30px; width: 30px; object-fit: contain;">
+                    <a href="{% url 'team_detail' row.id %}" style="text-decoration: none; color: inherit; font-weight: bold; display: flex; align-items: center; gap: 10px;">
+                        {% if row.logo %}
+                            <img src="{{ row.logo.url }}" style="height: 30px; width: 30px; object-fit: contain;">
                         {% endif %}
-                        {{ row.team.name }}
+                        {{ row.name }}
                     </a>
                 </td>
                 

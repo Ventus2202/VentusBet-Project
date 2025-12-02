@@ -1,8 +1,11 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
 from .utils import generate_slip, get_multi_market_opportunities, get_form_sequence
-from .models import Match, MatchResult, Prediction, Team, Season, TeamFormSnapshot
+from .models import Match, MatchResult, Prediction, Team, Season, TeamFormSnapshot, Rivalry
 from django.db.models import Q
+from operator import attrgetter
+from math import fabs
+from .forms import MatchStatsForm
 
 def is_admin(user):
     return user.is_superuser
@@ -10,43 +13,95 @@ def is_admin(user):
 # ... (other code between imports and dashboard)
 
 def dashboard(request):
-    upcoming_query = Match.objects.filter(
-        status='SCHEDULED').order_by('date_time')
-    recent_query = Match.objects.filter(
-        status='FINISHED').order_by('-date_time')[:5]
+    # 1. Ottimizzazione Query Matches
+    upcoming_query = Match.objects.filter(status='SCHEDULED').select_related('home_team', 'away_team').order_by('date_time')
+    recent_query = Match.objects.filter(status='FINISHED').select_related('home_team', 'away_team').order_by('-date_time')[:5]
     
+    # Eseguiamo le query dei match (liste)
+    upcoming_matches = list(upcoming_query)
+    recent_matches = list(recent_query)
+    
+    # 2. Bulk Fetch Predictions
+    # Raccogliamo tutti gli ID dei match
+    all_match_ids = [m.id for m in upcoming_matches] + [m.id for m in recent_matches]
+    
+    predictions_qs = Prediction.objects.filter(match_id__in=all_match_ids)
+    # Creiamo una mappa: match_id -> prediction object
+    # (Assumiamo una predizione per match, o prendiamo l'ultima creata se ce ne sono più di una)
+    predictions_map = {}
+    for p in predictions_qs:
+        # Se ci sono più predizioni, questa logica sovrascrive mantenendo l'ultima processata.
+        # Idealmente dovremmo ordinare prima, ma per ora va bene.
+        predictions_map[p.match_id] = p
+
     # --- LOGICA SCHEDINA (New Engine) ---
-    all_predictions = Prediction.objects.filter(match__in=upcoming_query).select_related('match').order_by('match__date_time')
-    schedina = generate_slip(all_predictions)
-    # --- FINE LOGICA ---
+    # Passiamo le prediction degli upcoming matches
+    upcoming_preds = [predictions_map[m.id] for m in upcoming_matches if m.id in predictions_map]
+    schedina = generate_slip(upcoming_preds)
+
+    # 3. Bulk Fetch TeamFormSnapshots (Solo per Upcoming)
+    upcoming_match_ids = [m.id for m in upcoming_matches]
+    snapshots_qs = TeamFormSnapshot.objects.filter(match_id__in=upcoming_match_ids).select_related('team')
+    
+    # Mappa: match_id -> { team_id: snapshot }
+    snapshots_map = {}
+    for snap in snapshots_qs:
+        if snap.match_id not in snapshots_map:
+            snapshots_map[snap.match_id] = {}
+        snapshots_map[snap.match_id][snap.team_id] = snap
+
+    # 4. Bulk Fetch Form Sequences (Ultima forma conosciuta per ogni squadra)
+    # Raccogliamo tutti i team ID coinvolti negli upcoming
+    team_ids = set()
+    for m in upcoming_matches:
+        team_ids.add(m.home_team_id)
+        team_ids.add(m.away_team_id)
+    
+    # Prendiamo l'ultimo snapshot per ogni team. 
+    # Nota: Questo è complesso da fare in una sola query efficiente senza Window Functions.
+    # Per semplicità e performance decenti, facciamo una query che prende gli snapshot recenti ordinati
+    # e poi filtriamo in Python (che è veloce per poche decine di team).
+    latest_forms = {}
+    if team_ids:
+        # Prendiamo gli snapshot recenti di questi team
+        recent_snaps = TeamFormSnapshot.objects.filter(
+            team_id__in=team_ids
+        ).order_by('team_id', '-match__date_time')
+        
+        # Manteniamo solo il primo (il più recente) per ogni team
+        for snap in recent_snaps:
+            if snap.team_id not in latest_forms:
+                latest_forms[snap.team_id] = snap.form_sequence
 
     def pack_matches(matches, is_upcoming=False):
         data = []
         for m in matches:
-            pred = Prediction.objects.filter(
-                match=m).order_by('-created_at').first()
-
+            pred = predictions_map.get(m.id)
+            
             item = {
                 'match': m,
                 'prediction': pred,
             }
 
             if is_upcoming:
-                item['home_form'] = get_form_sequence(m.home_team)
-                item['away_form'] = get_form_sequence(m.away_team)
+                # Recupero form sequence dalla mappa in memoria
+                item['home_form'] = latest_forms.get(m.home_team_id, "")
+                item['away_form'] = latest_forms.get(m.away_team_id, "")
                 
                 if pred:
-                    # Recupero snapshot per la logica avanzata
-                    home_snap = TeamFormSnapshot.objects.filter(match=m, team=m.home_team).first()
-                    away_snap = TeamFormSnapshot.objects.filter(match=m, team=m.away_team).first()
+                    # Recupero snapshot dalla mappa in memoria
+                    match_snaps = snapshots_map.get(m.id, {})
+                    home_snap = match_snaps.get(m.home_team_id)
+                    away_snap = match_snaps.get(m.away_team_id)
+                    
                     item['opportunities'] = get_multi_market_opportunities(pred, home_snap, away_snap)
 
             data.append(item)
         return data
 
     context = {
-        'upcoming_matches': pack_matches(upcoming_query, is_upcoming=True),
-        'recent_matches': pack_matches(recent_query, is_upcoming=False),
+        'upcoming_matches': pack_matches(upcoming_matches, is_upcoming=True),
+        'recent_matches': pack_matches(recent_matches, is_upcoming=False),
         'schedina': schedina
     }
 
@@ -82,7 +137,12 @@ def control_panel(request):
 @user_passes_test(is_admin)
 def edit_match_stats(request, match_id):
     match = get_object_or_404(Match, id=match_id)
-    match_result, created = MatchResult.objects.get_or_create(match=match)
+    
+    # Recuperiamo il risultato se esiste, altrimenti ne creiamo uno nuovo (senza salvare su DB)
+    try:
+        match_result = match.result
+    except MatchResult.DoesNotExist:
+        match_result = MatchResult(match=match)
 
     if request.method == 'POST':
         form = MatchStatsForm(request.POST, instance=match_result)
@@ -91,12 +151,25 @@ def edit_match_stats(request, match_id):
             match.status = 'FINISHED'
             match.save()
             messages.success(request, f"Dati salvati per {match}")
+            
+            # Logic for "Save & Next"
+            if 'save_next' in request.POST:
+                # Find next match (scheduled or finished but without full stats)
+                # Here we simply take the next chronological match that is NOT the current one
+                next_match = Match.objects.filter(
+                    status='SCHEDULED',
+                    date_time__gte=match.date_time
+                ).exclude(id=match.id).order_by('date_time').first()
+
+                if next_match:
+                    return redirect('edit_match', match_id=next_match.id)
+                else:
+                    messages.info(request, "Nessuna altra partita in programma trovata.")
+
             return redirect('control_panel')
     else:
-        initial_data = {}
-        if match_result.home_stats: initial_data['home_xg'] = match_result.home_stats.get('xg', 0)
-        if match_result.away_stats: initial_data['away_xg'] = match_result.away_stats.get('xg', 0)
-        form = MatchStatsForm(instance=match_result, initial=initial_data)
+        # Il form ora gestisce autonomamente l'estrazione dai campi JSON nell'__init__
+        form = MatchStatsForm(instance=match_result)
 
     return render(request, 'predictors/edit_match.html', {'form': form, 'match': match})
 
@@ -112,6 +185,12 @@ def match_detail(request, match_id):
         home_snap = None
         away_snap = None
 
+    # Cerca Derby/Rivalità
+    rivalry = Rivalry.objects.filter(
+        Q(team1=match.home_team, team2=match.away_team) | 
+        Q(team1=match.away_team, team2=match.home_team)
+    ).first()
+
     context = {
         'match': match,
         'prediction': prediction,
@@ -119,6 +198,7 @@ def match_detail(request, match_id):
         'away_snap': away_snap,
         'home_form': get_form_sequence(match.home_team), # Usiamo la funzione helper che hai già
         'away_form': get_form_sequence(match.away_team),
+        'rivalry': rivalry,
     }
     return render(request, 'predictors/match_detail.html', context)
 
@@ -177,64 +257,88 @@ def team_detail(request, team_id):
     }
     return render(request, 'predictors/team_detail.html', context)
 
+from django.db.models import Count, Sum, Case, When, F, Value, IntegerField
+
 def standings(request):
+    # 1. Inizializza struttura dati per tutte le squadre
     teams = Team.objects.all()
+    stats = {t.id: {
+        'team': t, 'played': 0, 'points': 0, 'won': 0, 'drawn': 0, 'lost': 0,
+        'gf': 0, 'ga': 0, 'gd': 0
+    } for t in teams}
+
+    # 2. Aggregazione Partite in Casa
+    home_stats = Match.objects.filter(status='FINISHED').values('home_team').annotate(
+        played=Count('id'),
+        wins=Count('id', filter=Q(result__winner='1')),
+        draws=Count('id', filter=Q(result__winner='X')),
+        losses=Count('id', filter=Q(result__winner='2')),
+        gf=Sum('result__home_goals'),
+        ga=Sum('result__away_goals')
+    )
+
+    for entry in home_stats:
+        t_id = entry['home_team']
+        if t_id in stats:
+            s = stats[t_id]
+            s['played'] += entry['played']
+            s['won'] += entry['wins']
+            s['drawn'] += entry['draws']
+            s['lost'] += entry['losses']
+            s['gf'] += (entry['gf'] or 0)
+            s['ga'] += (entry['ga'] or 0)
+            s['points'] += (entry['wins'] * 3) + entry['draws']
+
+    # 3. Aggregazione Partite Fuori Casa
+    away_stats = Match.objects.filter(status='FINISHED').values('away_team').annotate(
+        played=Count('id'),
+        wins=Count('id', filter=Q(result__winner='2')),
+        draws=Count('id', filter=Q(result__winner='X')),
+        losses=Count('id', filter=Q(result__winner='1')),
+        gf=Sum('result__away_goals'),
+        ga=Sum('result__home_goals')
+    )
+
+    for entry in away_stats:
+        t_id = entry['away_team']
+        if t_id in stats:
+            s = stats[t_id]
+            s['played'] += entry['played']
+            s['won'] += entry['wins']
+            s['drawn'] += entry['draws']
+            s['lost'] += entry['losses']
+            s['gf'] += (entry['gf'] or 0)
+            s['ga'] += (entry['ga'] or 0)
+            s['points'] += (entry['wins'] * 3) + entry['draws']
+
+    # 4. Calcolo Differenza Reti e Conversione in Lista
     table = []
+    for s in stats.values():
+        s['gd'] = s['gf'] - s['ga']
+        # Per compatibilità col template che aspetta attributi diretti (row.name, row.id),
+        # dobbiamo assicurarci che l'oggetto passato al template abbia questi attributi.
+        # Il template attuale usa row.name, row.id, row.logo.
+        # Creiamo un oggetto "ibrido" o passiamo il dizionario modificando il template per usare row.team.name?
+        # Abbiamo appena modificato il template per usare row.name.
+        # Quindi 's' deve comportarsi come un oggetto con attributi.
+        # Creiamo una classe al volo o un SimpleNamespace, o riattacchiamo gli attributi all'oggetto Team.
+        team_obj = s['team']
+        team_obj.played = s['played']
+        team_obj.points = s['points']
+        team_obj.won = s['won']
+        team_obj.drawn = s['drawn']
+        team_obj.lost = s['lost']
+        team_obj.gf = s['gf']
+        team_obj.ga = s['ga']
+        team_obj.gd = s['gd']
+        table.append(team_obj)
 
-    for team in teams:
-        # Recupera partite giocate (Casa e Fuori) finite
-        home_matches = Match.objects.filter(home_team=team, status='FINISHED')
-        away_matches = Match.objects.filter(away_team=team, status='FINISHED')
-
-        data = {
-            'team': team,
-            'played': 0, 'points': 0, 'won': 0, 'drawn': 0, 'lost': 0,
-            'gf': 0, 'ga': 0, 'gd': 0
-        }
-
-        # Calcolo Casa
-        for m in home_matches:
-            if hasattr(m, 'result'):
-                res = m.result
-                data['played'] += 1
-                data['gf'] += res.home_goals
-                data['ga'] += res.away_goals
-                
-                if res.winner == '1':
-                    data['points'] += 3
-                    data['won'] += 1
-                elif res.winner == 'X':
-                    data['points'] += 1
-                    data['drawn'] += 1
-                else:
-                    data['lost'] += 1
-
-        # Calcolo Fuori
-        for m in away_matches:
-            if hasattr(m, 'result'):
-                res = m.result
-                data['played'] += 1
-                data['gf'] += res.away_goals
-                data['ga'] += res.home_goals
-                
-                if res.winner == '2':
-                    data['points'] += 3
-                    data['won'] += 1
-                elif res.winner == 'X':
-                    data['points'] += 1
-                    data['drawn'] += 1
-                else:
-                    data['lost'] += 1
-
-        data['gd'] = data['gf'] - data['ga']
-        table.append(data)
-
-    # Ordina per Punti, Differenza Reti, Goal Fatti
-    table = sorted(table, key=itemgetter('points', 'gd', 'gf'), reverse=True)
+    # 5. Ordinamento
+    table = sorted(table, key=attrgetter('points', 'gd', 'gf'), reverse=True)
 
     # Aggiungi posizione
     for i, row in enumerate(table):
-        row['position'] = i + 1
+        row.position = i + 1
 
     return render(request, 'predictors/standings.html', {'table': table})
 

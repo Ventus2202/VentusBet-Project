@@ -1,0 +1,29 @@
+{% comment %}
+Renders a team's information block, including logo, name, and form sequence.
+
+**Context:**
+- `team`: The Team object to display.
+- `form`: A sequence of 'W', 'D', 'L' for the team's recent form.
+- `team_link_disabled`: (Optional) If true, disables the link to the team detail page.
+{% endcomment %}
+
+<div class="team-info">
+    <a href="{% if not team_link_disabled %}{% url 'team_detail' team.id %}{% else %}#{% endif %}" class="team-link {% if team_link_disabled %}no-hover{% endif %}">
+        {% if team.logo %}
+            <img src="{{ team.logo.url }}" alt="{{ team.name }} logo" class="team-logo">
+        {% else %}
+            <div class="logo-placeholder">
+                <span>🏢</span>
+            </div>
+        {% endif %}
+        <div class="team-name">{{ team.name }}</div>
+    </a>
+    
+    {% if form %}
+    <div class="form-container">
+        {% for result in form %}
+            <span class="form-dot form-{{ result }}"></span>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>

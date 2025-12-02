@@ -1,4 +1,133 @@
-from .models import TeamFormSnapshot
+import statistics
+from django.db.models import Q
+from .models import TeamFormSnapshot, Team, Match, Rivalry
+
+def is_team_in_derby(home_team, away_team):
+    """
+    Controlla se due squadre formano un derby usando il modello Rivalry.
+    Restituisce l'intensità (int > 0) se trovata, altrimenti 0.
+    """
+    if not home_team or not away_team:
+        return 0
+    
+    rivalry = Rivalry.objects.filter(
+        Q(team1=home_team, team2=away_team) |
+        Q(team1=away_team, team2=home_team)
+    ).first()
+    
+    return rivalry.intensity if rivalry else 0
+
+def calculate_advanced_metrics(last_5_matches, team, current_match_home_team=None, current_match_away_team=None):
+    """
+    Centralized logic for calculating performance metrics from a list of matches.
+    Used by both calculate_features.py (historical) and predict_upcoming.py (live).
+    """
+    points = 0
+    total_xg_scored = 0.0
+    total_xg_conceded = 0.0
+    total_gf = 0
+    total_ga = 0
+    
+    goals_scored_list = [] # For volatility
+    form_chars = []
+
+    matches_count = len(last_5_matches)
+
+    for m in last_5_matches:
+        if not hasattr(m, 'result'): continue
+        res = m.result
+        
+        is_home = (m.home_team == team)
+        
+        # --- Outcome Logic ---
+        outcome = ''
+        if res.winner == '1':
+            outcome = 'W' if is_home else 'L'
+        elif res.winner == '2':
+            outcome = 'W' if not is_home else 'L'
+        elif res.winner == 'X':
+            outcome = 'D'
+        
+        form_chars.append(outcome)
+        
+        if outcome == 'W': points += 3
+        elif outcome == 'D': points += 1
+        
+        # --- Goals ---
+        gf = res.home_goals if is_home else res.away_goals
+        ga = res.away_goals if is_home else res.home_goals
+        total_gf += gf
+        total_ga += ga
+        goals_scored_list.append(gf)
+        
+        # --- xG ---
+        my_stats = res.home_stats if is_home else res.away_stats
+        opp_stats = res.away_stats if is_home else res.home_stats
+        
+        xg_for = float((my_stats or {}).get('xg', 0.0))
+        xg_against = float((opp_stats or {}).get('xg', 0.0))
+        
+        total_xg_scored += xg_for
+        total_xg_conceded += xg_against
+
+    # --- Averages ---
+    avg_xg = total_xg_scored / matches_count if matches_count > 0 else 0.0
+    avg_gf = total_gf / matches_count if matches_count > 0 else 0.0
+    avg_ga = total_ga / matches_count if matches_count > 0 else 0.0
+
+    # --- Advanced Metrics (Next-Gen) ---
+    total_xg_volume = total_xg_scored + total_xg_conceded
+    xg_ratio = (total_xg_scored / total_xg_volume) if total_xg_volume > 0 else 0.5
+    
+    eff_att = total_gf - total_xg_scored
+    eff_def = total_xg_conceded - total_ga
+    
+    volatility = statistics.stdev(goals_scored_list) if len(goals_scored_list) > 1 else 0.0
+    
+    # --- Fattori Psicologici ---
+    derby_intensity = 0
+    if current_match_home_team and current_match_away_team:
+        # Passiamo gli oggetti Team, riceviamo l'intensità (int)
+        derby_intensity = is_team_in_derby(current_match_home_team, current_match_away_team)
+    
+    # Proxy per pressione: Aspettativa vs Realtà (basato su ELO)
+    # Recuperiamo l'ELO attuale
+    last_snap = TeamFormSnapshot.objects.filter(team=team).order_by('-match__date_time').first()
+    current_elo = last_snap.elo_rating if last_snap else 1500.0
+
+    pressure_index = 50.0 # Base
+    
+    if current_elo > 1600: # Top Team (Aspettativa Alta)
+        if points < 7: # Crisi di risultati
+            pressure_index = 90.0
+        else:
+            pressure_index = 60.0 # Pressione normale per chi deve vincere
+            
+    elif current_elo < 1450: # Low Team (Lotta salvezza)
+        if points < 3: # Panico retrocessione
+            pressure_index = 100.0
+        else:
+            pressure_index = 40.0 # Tranquillo, fa il suo
+            
+    else: # Mid Table
+        if points < 4: # Scivolone verso il basso
+            pressure_index = 70.0
+        else:
+            pressure_index = 50.0
+
+    return {
+        'points': points,
+        'avg_xg': avg_xg,
+        'avg_gf': avg_gf,
+        'avg_ga': avg_ga,
+        'xg_ratio': xg_ratio,
+        'eff_att': eff_att,
+        'eff_def': eff_def,
+        'volatility': volatility,
+        'form_sequence': ",".join(form_chars),
+        'derby_intensity': derby_intensity, # Renamed from is_derby
+        'pressure_index': pressure_index
+    }
 """
 Advanced Multi-Market Betting Recommendation Engine for VentusBet
 This engine uses a scoring system based on a wide range of predicted stats
@@ -46,6 +175,7 @@ def get_multi_market_opportunities(prediction, home_snap=None, away_snap=None):
         
         'O1.5': {'label': 'Over 1.5', 'description': 'Almeno 2 Goal', 'score': 0, 'category': 'Goal'},
         'O2.5': {'label': 'Over 2.5', 'description': 'Almeno 3 Goal', 'score': 0, 'category': 'Goal'},
+        'U2.5': {'label': 'Under 2.5', 'description': 'Meno di 3 Goal', 'score': 0, 'category': 'Goal'},
         'GG': {'label': 'GG', 'description': 'Entrambe Segnano', 'score': 0, 'category': 'Goal'},
         'NG': {'label': 'NG', 'description': 'No Goal', 'score': 0, 'category': 'Goal'},
 

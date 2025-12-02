@@ -1,12 +1,25 @@
 <div class="stat-unit">
     <div class="stat-top">
-        <span class="stat-value">{{ home_value }}</span>
+        <span class="stat-value">{{ val_home|floatformat|default:"0" }}</span>
         <span class="stat-name">{{ label }}</span>
-        <span class="stat-value">{{ away_value }}</span>
+        <span class="stat-value">{{ val_away|floatformat|default:"0" }}</span>
     </div>
+    
     <div class="progress-track">
-        <div class="bar home-bar" style="flex-grow: {{ home_value|add:'0.1' }};"></div>
-        <div class="bar-separator"></div>
-        <div class="bar away-bar" style="flex-grow: {{ away_value|add:'0.1' }};"></div>
+        {# Use 'default:0' to handle None values safely #}
+        {% with vh=val_home|default:0 va=val_away|default:0 %}
+            {% with total=vh|add:va %}
+                {% if total > 0 %}
+                    <!-- Home Bar: Calculated Width using widthratio (Percentage) -->
+                    <div class="bar home-bar" style="width: {% widthratio vh total 100 %}%;"></div>
+                    <!-- Away Bar: Fills remaining space with flex-grow -->
+                    <div class="bar away-bar" style="flex-grow: 1;"></div>
+                {% else %}
+                     <!-- 0 vs 0 Case: Equal split, lower opacity to indicate no data/neutral -->
+                     <div class="bar home-bar" style="width: 50%; opacity: 0.2;"></div>
+                     <div class="bar away-bar" style="width: 50%; opacity: 0.2;"></div>
+                {% endif %}
+            {% endwith %}
+        {% endwith %}
     </div>
 </div>
