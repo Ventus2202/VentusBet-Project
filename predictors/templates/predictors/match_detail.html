@@ -129,8 +129,96 @@
         </div>
     </div>
 
-    <!-- 3. AI PREDICTION (Core) -->
-    {% if prediction %}
+    <!-- 3. AI PREDICTION / PERFORMANCE REVIEW -->
+    {% if comparison_data %}
+    <div class="card card-prediction">
+        <h3 class="prediction-title" style="color: #28a745;">Analisi Performance AI</h3>
+        <p style="text-align: center; margin-bottom: 20px; color: #666;">
+            Confronto tra il risultato reale e la previsione.<br>
+            <small>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#28a745" viewBox="0 0 16 16" style="vertical-align: -2px;"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg> Ottimo &nbsp; 
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#ffc107" viewBox="0 0 16 16" style="vertical-align: -2px;"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/></svg> Buono &nbsp; 
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="#dc3545" viewBox="0 0 16 16" style="vertical-align: -2px;"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4zm.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg> Impreciso
+            </small>
+        </p>
+        
+        <div class="comparison-table-wrapper">
+            <table class="comparison-table" style="width: 100%; border-collapse: separate; border-spacing: 0 12px;">
+                <thead>
+                    <tr style="text-transform: uppercase; font-size: 0.75em; color: #999; letter-spacing: 1px;">
+                        <th style="text-align: right; width: 35%; padding-right: 15px;">{{ match.home_team.name|truncatechars:15 }}</th>
+                        <th style="text-align: center; width: 30%;">Statistica</th>
+                        <th style="text-align: left; width: 35%; padding-left: 15px;">{{ match.away_team.name|truncatechars:15 }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in comparison_data %}
+                    <tr style="background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-radius: 8px;">
+                        
+                        <!-- HOME -->
+                        <td style="padding: 10px 15px; border-radius: 8px 0 0 8px; text-align: right; vertical-align: middle;">
+                            <div style="display: flex; flex-direction: row-reverse; align-items: center; gap: 12px;">
+                                <!-- Real Value -->
+                                <span style="font-size: 1.4em; font-weight: bold; color: #333; min-width: 30px;">{{ item.home_real }}</span>
+                                
+                                <!-- Status & Acc -->
+                                <div style="display: flex; flex-direction: column; align-items: center;">
+                                    {% if item.home_status == 'perfect' %}
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#28a745" viewBox="0 0 16 16" title="Ottimo ({{ item.home_diff_label }})"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>
+                                    {% elif item.home_status == 'good' %}
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#ffc107" viewBox="0 0 16 16" title="Buono ({{ item.home_diff_label }})"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/></svg>
+                                    {% else %}
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#dc3545" viewBox="0 0 16 16" title="Impreciso ({{ item.home_diff_label }})"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4zm.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>
+                                    {% endif %}
+                                    <span style="font-size: 0.75em; color: #777; font-weight: 600;">{{ item.home_acc }}%</span>
+                                </div>
+                                
+                                <!-- Predicted (Small) -->
+                                <div style="display: flex; flex-direction: column; align-items: flex-end; opacity: 0.6; margin-right: 5px;">
+                                    <span style="font-size: 0.7em; text-transform: uppercase;">Prev</span>
+                                    <span style="font-size: 0.9em; font-weight: 600;">{{ item.home_pred }}</span>
+                                </div>
+                            </div>
+                        </td>
+                        
+                        <!-- METRIC LABEL -->
+                        <td style="text-align: center; vertical-align: middle; font-weight: 600; color: #555; background: #f8f9fa; font-size: 0.95em;">
+                            {{ item.label }}
+                        </td>
+
+                        <!-- AWAY -->
+                        <td style="padding: 10px 15px; border-radius: 0 8px 8px 0; text-align: left; vertical-align: middle;">
+                            <div style="display: flex; flex-direction: row; align-items: center; gap: 12px;">
+                                <!-- Real Value -->
+                                <span style="font-size: 1.4em; font-weight: bold; color: #333; min-width: 30px;">{{ item.away_real }}</span>
+
+                                <!-- Status & Acc -->
+                                <div style="display: flex; flex-direction: column; align-items: center;">
+                                    {% if item.away_status == 'perfect' %}
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#28a745" viewBox="0 0 16 16" title="Ottimo ({{ item.away_diff_label }})"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>
+                                    {% elif item.away_status == 'good' %}
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#ffc107" viewBox="0 0 16 16" title="Buono ({{ item.away_diff_label }})"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8z"/></svg>
+                                    {% else %}
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="#dc3545" viewBox="0 0 16 16" title="Impreciso ({{ item.away_diff_label }})"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4zm.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>
+                                    {% endif %}
+                                    <span style="font-size: 0.75em; color: #777; font-weight: 600;">{{ item.away_acc }}%</span>
+                                </div>
+
+                                <!-- Predicted (Small) -->
+                                <div style="display: flex; flex-direction: column; align-items: flex-start; opacity: 0.6; margin-left: 5px;">
+                                    <span style="font-size: 0.7em; text-transform: uppercase;">Prev</span>
+                                    <span style="font-size: 0.9em; font-weight: 600;">{{ item.away_pred }}</span>
+                                </div>
+                            </div>
+                        </td>
+
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% elif prediction %}
     <div class="card card-prediction">
         <h3 class="prediction-title">Previsione AI</h3>
         
@@ -143,7 +231,7 @@
         </div>
 
         <div class="stats-bars-container">
-            {% include 'predictors/components/stat_bar.html' with label="Possesso Palla" val_home=50 val_away=50 %} <!-- Placeholder for Possession -->
+            {% include 'predictors/components/stat_bar.html' with label="Possesso Palla" val_home=prediction.home_possession val_away=prediction.away_possession %}
             {% include 'predictors/components/stat_bar.html' with label="Tiri Totali" val_home=prediction.home_total_shots val_away=prediction.away_total_shots %}
             {% include 'predictors/components/stat_bar.html' with label="Tiri in Porta" val_home=prediction.home_shots_on_target val_away=prediction.away_shots_on_target %}
             {% include 'predictors/components/stat_bar.html' with label="Corner" val_home=prediction.home_corners val_away=prediction.away_corners %}
@@ -157,15 +245,131 @@
     </div>
     {% endif %}
 
-    <!-- 4. LINEUPS (Future Placeholder) -->
+    <!-- 4. LINEUPS -->
     <div class="card">
-        <h3>Formazioni Probabili</h3>
-        <div class="lineup-placeholder">
-            <div style="text-align: center;">
-                <div class="lineup-icon">🏟️</div>
-                <p>Modulo Formazioni in arrivo...</p>
+        <h3>
+            {% if is_probable_lineup %}
+                Formazioni Probabili (Stimate) <span style="font-size: 0.6em; color: #888; font-weight: normal;">Basate sul minutaggio recente</span>
+            {% else %}
+                Formazioni & Statistiche Individuali
+            {% endif %}
+        </h3>
+        
+        {% if home_lineup or away_lineup %}
+            <div class="lineups-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                
+                <!-- HOME LINEUP -->
+                <div>
+                    <h4 style="color: var(--primary-color); border-bottom: 2px solid var(--primary-color); padding-bottom: 5px;">
+                        {{ match.home_team.name }}
+                        {% if is_probable_lineup and home_module %}
+                            <span style="float: right; font-size: 0.8em; background: #eee; padding: 2px 6px; border-radius: 4px; color: #555;">
+                                {{ home_module }}
+                            </span>
+                        {% endif %}
+                    </h4>
+                    <table class="stats-table" style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid #ddd;">
+                                <th style="padding: 5px;">Pos</th>
+                                <th style="padding: 5px;">Giocatore</th>
+                                {% if not is_probable_lineup %}
+                                <th style="padding: 5px;">Min</th>
+                                <th style="padding: 5px;">Perf</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in home_lineup %}
+                            <tr style="border-bottom: 1px solid #eee; {% if not p.is_starter %}background: #f9f9f9; color: #777;{% endif %}">
+                                <td style="padding: 5px; font-weight: bold;">{{ p.position|default:"?" }}</td>
+                                <td style="padding: 5px;">{{ p.player.name }}</td>
+                                {% if not is_probable_lineup %}
+                                <td style="padding: 5px;">
+                                    {% if p.minutes == 'Avg' %}
+                                        <span style="font-style: italic; color: #999;">Stima</span>
+                                    {% else %}
+                                        {{ p.minutes }}'
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 5px;">
+                                    {% if not is_probable_lineup %}
+                                        {% if p.goals > 0 %}⚽ {{ p.goals }} {% endif %}
+                                        {% if p.assists > 0 %}🅰️ {{ p.assists }} {% endif %}
+                                        <span title="xG: {{ p.xg }} | xA: {{ p.xa }}" style="cursor: help; border-bottom: 1px dotted #999;">
+                                            {{ p.xg|floatformat:2 }} xG
+                                        </span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- AWAY LINEUP -->
+                <div>
+                    <h4 style="color: var(--accent-color); border-bottom: 2px solid var(--accent-color); padding-bottom: 5px;">
+                        {{ match.away_team.name }}
+                        {% if is_probable_lineup and away_module %}
+                            <span style="float: right; font-size: 0.8em; background: #eee; padding: 2px 6px; border-radius: 4px; color: #555;">
+                                {{ away_module }}
+                            </span>
+                        {% endif %}
+                    </h4>
+                    <table class="stats-table" style="width: 100%; font-size: 0.85em; border-collapse: collapse;">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 1px solid #ddd;">
+                                <th style="padding: 5px;">Pos</th>
+                                <th style="padding: 5px;">Giocatore</th>
+                                {% if not is_probable_lineup %}
+                                <th style="padding: 5px;">Min</th>
+                                <th style="padding: 5px;">Perf</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in away_lineup %}
+                            <tr style="border-bottom: 1px solid #eee; {% if not p.is_starter %}background: #f9f9f9; color: #777;{% endif %}">
+                                <td style="padding: 5px; font-weight: bold;">{{ p.position|default:"?" }}</td>
+                                <td style="padding: 5px;">{{ p.player.name }}</td>
+                                {% if not is_probable_lineup %}
+                                <td style="padding: 5px;">
+                                    {% if p.minutes == 'Avg' %}
+                                        <span style="font-style: italic; color: #999;">Stima</span>
+                                    {% else %}
+                                        {{ p.minutes }}'
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 5px;">
+                                    {% if not is_probable_lineup %}
+                                        {% if p.goals > 0 %}⚽ {{ p.goals }} {% endif %}
+                                        {% if p.assists > 0 %}🅰️ {{ p.assists }} {% endif %}
+                                        <span title="xG: {{ p.xg }} | xA: {{ p.xa }}" style="cursor: help; border-bottom: 1px dotted #999;">
+                                            {{ p.xg|floatformat:2 }} xG
+                                        </span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
+        {% else %}
+            <div class="lineup-placeholder">
+                <div style="text-align: center;">
+                    <div class="lineup-icon">🏟️</div>
+                    <p>Dati formazioni non ancora disponibili.</p>
+                </div>
+            </div>
+        {% endif %}
     </div>
 
 </div>

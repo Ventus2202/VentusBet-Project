@@ -11,6 +11,12 @@
     <form method="post" class="card">
         {% csrf_token %}
         
+        <!-- MODIFICA DATA MATCH -->
+        <div style="text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;">
+            <label style="display: block; font-size: 0.8em; font-weight: bold; color: var(--text-muted); margin-bottom: 5px;">DATA E ORA PARTITA</label>
+            {{ form.match_date }}
+        </div>
+
         <!-- HEADER PARTITA -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid var(--border-color);">
             <div style="text-align: center; width: 40%;">
@@ -67,25 +73,11 @@
                 <div class="input-wrapper">{{ form.away_total_shots }}</div>
             </div>
 
-            <!-- Tiri in Porta -->
-            <div class="stats-row">
-                <div class="input-wrapper">{{ form.home_shots_on_target }}</div>
-                <div class="label-wrapper">Tiri in Porta</div>
-                <div class="input-wrapper">{{ form.away_shots_on_target }}</div>
-            </div>
-
             <!-- Corner -->
             <div class="stats-row">
                 <div class="input-wrapper">{{ form.home_corners }}</div>
                 <div class="label-wrapper">Calci d'Angolo</div>
                 <div class="input-wrapper">{{ form.away_corners }}</div>
-            </div>
-
-            <!-- Fuorigioco -->
-            <div class="stats-row">
-                <div class="input-wrapper">{{ form.home_offsides }}</div>
-                <div class="label-wrapper">Fuorigioco</div>
-                <div class="input-wrapper">{{ form.away_offsides }}</div>
             </div>
 
             <!-- Falli -->
@@ -100,6 +92,20 @@
                 <div class="input-wrapper">{{ form.home_yellow_cards }}</div>
                 <div class="label-wrapper">Cartellini Gialli</div>
                 <div class="input-wrapper">{{ form.away_yellow_cards }}</div>
+            </div>
+
+            <!-- Tiri in Porta -->
+            <div class="stats-row">
+                <div class="input-wrapper">{{ form.home_shots_on_target }}</div>
+                <div class="label-wrapper">Tiri in Porta</div>
+                <div class="input-wrapper">{{ form.away_shots_on_target }}</div>
+            </div>
+
+            <!-- Fuorigioco -->
+            <div class="stats-row">
+                <div class="input-wrapper">{{ form.home_offsides }}</div>
+                <div class="label-wrapper">Fuorigioco</div>
+                <div class="input-wrapper">{{ form.away_offsides }}</div>
             </div>
 
         </div>
@@ -182,5 +188,44 @@
             font-size: 0.85em;
         }
     }
+
+    /* Highlight empty/zero fields to draw attention */
+    .input-wrapper input[value="0"], .input-wrapper input[value="0.0"] {
+        border-color: #ffc107; /* Warning Yellow */
+        background-color: #fffbf0;
+    }
+    .input-wrapper input[value="0"]:focus, .input-wrapper input[value="0.0"]:focus {
+        border-color: var(--primary-color);
+        background-color: white;
+    }
 </style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const homePoss = document.getElementById('id_home_possession');
+        const awayPoss = document.getElementById('id_away_possession');
+
+        function updatePossession(source, target) {
+            let val = parseInt(source.value);
+            if (!isNaN(val) && val >= 0 && val <= 100) {
+                target.value = 100 - val;
+                // Remove warning style if valid
+                target.style.borderColor = '#dee2e6';
+                target.style.backgroundColor = 'white';
+                source.style.borderColor = '#dee2e6';
+                source.style.backgroundColor = 'white';
+            }
+        }
+
+        if (homePoss && awayPoss) {
+            homePoss.addEventListener('input', function() {
+                updatePossession(this, awayPoss);
+            });
+
+            awayPoss.addEventListener('input', function() {
+                updatePossession(this, homePoss);
+            });
+        }
+    });
+</script>
 {% endblock %}

@@ -1,8 +1,8 @@
 import statistics
 from django.core.management.base import BaseCommand
-from predictors.models import Match, TeamFormSnapshot
-from predictors.utils import calculate_advanced_metrics
-from django.db.models import Q, Count
+from predictors.models import Match, TeamFormSnapshot, PlayerMatchStat
+from predictors.utils import calculate_advanced_metrics, calculate_starters_xg_avg
+from django.db.models import Q, Count, Avg
 
 class Command(BaseCommand):
     help = 'Calcola features avanzate (xG, Goal, Forma WDL) per l\'IA'
@@ -45,6 +45,25 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"Fatto! Aggiornati {count} match con dati avanzati e sequenza forma."))
 
+    def calculate_player_metrics(self, match, team):
+        """
+        Calcola la media delle prestazioni recenti degli 11 titolari (REALI).
+        """
+        # 1. Trova i titolari per questa partita
+        starters = PlayerMatchStat.objects.filter(
+            match=match,
+            team=team,
+            is_starter=True
+        ).values_list('player_id', flat=True)
+
+        if not starters:
+            return {'starters_xg': 0.0}
+
+        # 2. Usa la funzione centralizzata
+        team_avg = calculate_starters_xg_avg(list(starters), match.date_time)
+
+        return {'starters_xg': team_avg}
+
     def calculate_snapshot(self, current_match, team, match_home_team, match_away_team):
         # Prendiamo le ultime 5 partite giocate PRIMA di questa
         # Ottimizzazione: usiamo select_related per evitare N+1 sui risultati delle partite passate
@@ -65,7 +84,10 @@ class Command(BaseCommand):
         last_5 = list(past_matches[:5])
         metrics = calculate_advanced_metrics(last_5, team, match_home_team, match_away_team)
 
-        # 3. Salvataggio
+        # 3. Calcolo Metriche Giocatori
+        player_metrics = self.calculate_player_metrics(current_match, team)
+
+        # 4. Salvataggio
         snapshot, created = TeamFormSnapshot.objects.update_or_create(
             match=current_match,
             team=team,
@@ -85,6 +107,9 @@ class Command(BaseCommand):
 
                 # Nuovi campi Step 2 (Fattori Psicologici)
                 'is_derby': metrics['is_derby'],
-                'pressure_index': metrics['pressure_index']
+                'pressure_index': metrics['pressure_index'],
+
+                # Nuovi campi Step 3 (Giocatori)
+                'starters_avg_xg_last_5': player_metrics['starters_xg']
             }
         )

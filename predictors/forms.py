@@ -2,24 +2,32 @@ from django import forms
 from .models import MatchResult
 
 class MatchStatsForm(forms.ModelForm):
+    # --- CAMPO DATA ---
+    # Questo campo non appartiene a MatchResult, ma a Match. Lo gestiremo nel metodo save()
+    match_date = forms.DateTimeField(
+        label="Data e Ora", 
+        required=True, 
+        widget=forms.DateTimeInput(attrs={'type': 'datetime-local', 'class': 'form-control'})
+    )
+
     # --- STATISTICHE CASA ---
     home_xg = forms.FloatField(label="xG", required=False, min_value=0.0, widget=forms.NumberInput(attrs={'step': '0.01'}))
     home_possession = forms.IntegerField(label="Possesso %", required=False, min_value=0, max_value=100)
     home_total_shots = forms.IntegerField(label="Tiri Totali", required=False, min_value=0)
-    home_shots_on_target = forms.IntegerField(label="Tiri in Porta", required=False, min_value=0)
     home_corners = forms.IntegerField(label="Corner", required=False, min_value=0)
     home_fouls = forms.IntegerField(label="Falli", required=False, min_value=0)
     home_yellow_cards = forms.IntegerField(label="Gialli", required=False, min_value=0)
+    home_shots_on_target = forms.IntegerField(label="Tiri in Porta", required=False, min_value=0)
     home_offsides = forms.IntegerField(label="Fuorigioco", required=False, min_value=0)
 
     # --- STATISTICHE OSPITE ---
     away_xg = forms.FloatField(label="xG", required=False, min_value=0.0, widget=forms.NumberInput(attrs={'step': '0.01'}))
     away_possession = forms.IntegerField(label="Possesso %", required=False, min_value=0, max_value=100)
     away_total_shots = forms.IntegerField(label="Tiri Totali", required=False, min_value=0)
-    away_shots_on_target = forms.IntegerField(label="Tiri in Porta", required=False, min_value=0)
     away_corners = forms.IntegerField(label="Corner", required=False, min_value=0)
     away_fouls = forms.IntegerField(label="Falli", required=False, min_value=0)
     away_yellow_cards = forms.IntegerField(label="Gialli", required=False, min_value=0)
+    away_shots_on_target = forms.IntegerField(label="Tiri in Porta", required=False, min_value=0)
     away_offsides = forms.IntegerField(label="Fuorigioco", required=False, min_value=0)
 
     class Meta:
@@ -37,6 +45,11 @@ class MatchStatsForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             h_stats = self.instance.home_stats or {}
             a_stats = self.instance.away_stats or {}
+
+            # Inizializza campo data dal Match collegato
+            if self.instance.match:
+                # Format for datetime-local input: YYYY-MM-DDTHH:MM
+                self.fields['match_date'].initial = self.instance.match.date_time.strftime('%Y-%m-%dT%H:%M')
 
             # Mappatura JSON -> Campi Form
             self.fields['home_xg'].initial = h_stats.get('xg')
@@ -57,8 +70,32 @@ class MatchStatsForm(forms.ModelForm):
             self.fields['away_yellow_cards'].initial = a_stats.get('gialli')
             self.fields['away_offsides'].initial = a_stats.get('offsides')
 
+    def clean(self):
+        cleaned_data = super().clean()
+        h_poss = cleaned_data.get('home_possession') or 0
+        a_poss = cleaned_data.get('away_possession') or 0
+
+        # 1. Check Data Completeness (Possession cannot be 0 for played matches)
+        if h_poss == 0 and a_poss == 0:
+            # Allow saving 0 only if goal scores are missing (meaning match not actually played/finished yet)
+            # But here we are in 'Edit Match', usually for finished games.
+            # Let's make it a warning by raising validation error.
+            raise forms.ValidationError("Il Possesso Palla non può essere 0%. Inserisci i dati mancanti.")
+
+        # 2. Check Sum 100%
+        if h_poss + a_poss != 100:
+            raise forms.ValidationError(f"La somma del possesso palla deve fare 100% (Attuale: {h_poss + a_poss}%)")
+
+        return cleaned_data
+
     def save(self, commit=True):
         instance = super().save(commit=False)
+
+        # 0. Aggiornamento Data Match (se modificata)
+        new_date = self.cleaned_data.get('match_date')
+        if new_date and instance.match:
+            instance.match.date_time = new_date
+            instance.match.save()
 
         # 1. Calcolo Automatico Vincitore
         hg = self.cleaned_data.get('home_goals')

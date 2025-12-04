@@ -7,43 +7,224 @@
     <span style="background: var(--primary-color); color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.9em;">Admin Area</span>
 </div>
 
+    <!-- CARD 0: FUNZIONALITÀ ADMIN -->
+    <div class="card" style="margin-bottom: 25px; border-left: 5px solid #6c757d;">
+        <h3>🛠️ Funzionalità Admin</h3>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <a href="{% url 'admin_matches' %}" class="btn" style="background-color: #6c757d; text-decoration: none; display: flex; align-items: center; gap: 10px;">
+                <span>📋</span> Gestisci Match Conclusi
+            </a>
+            <!-- Futuri pulsanti admin possono andare qui -->
+        </div>
+    </div>
+
     <!-- CARD 1: AZIONI AUTOMATICHE -->
-    <div class="card" style="margin-bottom: 25px;">
-        <h3>🤖 Azioni Automatiche</h3>
-        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.9em;">Esegui i task in ordine sequenziale per aggiornare il sistema.</p>
+    <div class="card" style="margin-bottom: 25px; border-left: 5px solid var(--accent-color);">
+        <h3>🚀 Aggiornamento Sistema</h3>
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.9em;">
+            Esegue l'intera pipeline: Aggiornamento Calendario -> Calcolo Statistiche -> Calcolo ELO -> Addestramento IA -> Nuove Previsioni.
+        </p>
         
-        <form method="post" style="display: flex; flex-direction: column; gap: 15px;">
+        <form method="post" id="pipelineForm">
             {% csrf_token %}
-            
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <button type="submit" name="action" value="update_fixtures" class="btn" style="width: 100%; background-color: #e67e22; text-align: left;">
-                    1. Scarica Partite (API)
-                </button>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <button type="submit" name="action" value="calc_features" class="btn" style="width: 100%; background-color: #2980b9; text-align: left;">
-                    2. Calcola Features & ELO
-                </button>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <button type="submit" name="action" value="train_ai" class="btn" style="width: 100%; background-color: #27ae60; text-align: left;">
-                    3. Addestra IA
-                </button>
-            </div>
-
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <button type="submit" name="action" value="predict_next" class="btn" style="width: 100%; background-color: #8e44ad; text-align: left;">
-                    4. Genera Previsioni
-                </button>
-            </div>
+            <button type="submit" name="action" value="run_full_pipeline" id="pipelineBtn" class="btn" style="width: 100%; background-color: var(--primary-color); font-size: 1.1em; padding: 15px;">
+                ⚡ Aggiorna Tutto & Genera Previsioni
+            </button>
         </form>
+
+        <!-- LOADING BAR (Nascosta di default) -->
+        <div id="progressContainer" style="display: none; margin-top: 20px;">
+            <div style="width: 100%; background-color: #e9ecef; border-radius: 10px; overflow: hidden; height: 25px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
+                <div id="progressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-color), #00e676); transition: width 0.4s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8em; font-weight: bold;">
+                    0%
+                </div>
+            </div>
+            <p id="progressText" style="text-align: center; color: var(--text-muted); font-size: 0.9em; margin-top: 8px; font-style: italic;">
+                Inizializzazione processi...
+            </p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('pipelineForm').addEventListener('submit', function(e) {
+            e.preventDefault(); // Ferma il submit standard
+            
+            const btn = document.getElementById('pipelineBtn');
+            const container = document.getElementById('progressContainer');
+            const bar = document.getElementById('progressBar');
+            const text = document.getElementById('progressText');
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            // 1. UI Updates immediati
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.innerHTML = '⚙️ Avvio processo...';
+            container.style.display = 'block';
+            
+            // 2. Start Process via AJAX
+            const formData = new FormData(this);
+            // Assicuriamoci che l'action sia inclusa
+            formData.append('action', 'run_full_pipeline');
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'started') {
+                    startPolling();
+                } else {
+                    text.innerText = "❌ Errore nell'avvio del processo.";
+                    btn.disabled = false;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                text.innerText = "❌ Errore di comunicazione col server.";
+                btn.disabled = false;
+            });
+
+            // 3. Polling Function
+            function startPolling() {
+                const pollInterval = setInterval(() => {
+                    fetch("{% url 'pipeline_status' %}")
+                        .then(res => res.json())
+                        .then(status => {
+                            // Aggiorna UI
+                            const pct = status.progress;
+                            bar.style.width = pct + '%';
+                            bar.innerText = pct + '%';
+                            text.innerText = status.message;
+
+                            if (status.state === 'completed') {
+                                clearInterval(pollInterval);
+                                bar.style.backgroundColor = '#00c853'; // Green puro
+                                text.innerHTML = "<strong>✅ Completato! Ricaricamento pagina...</strong>";
+                                setTimeout(() => {
+                                    window.location.reload();
+                                }, 2000);
+                            } else if (status.state === 'error') {
+                                clearInterval(pollInterval);
+                                bar.style.backgroundColor = '#ff4444';
+                                btn.disabled = false;
+                                btn.style.opacity = '1';
+                                btn.innerHTML = '⚡ Riprova Aggiornamento';
+                            }
+                        })
+                        .catch(err => console.error('Polling error:', err));
+                }, 1000); // Controlla ogni secondo
+            }
+        });
+
+        // --- SCRAPE FORM LISTENER ---
+        document.getElementById('scrapeForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const btn = document.getElementById('scrapeBtn');
+            const container = document.getElementById('scrapeProgressContainer');
+            const bar = document.getElementById('scrapeProgressBar');
+            const text = document.getElementById('scrapeProgressText');
+
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.innerHTML = '⏳ In corso...';
+            container.style.display = 'block';
+
+            const formData = new FormData(this);
+            // Action è già nel bottone ma non viene passata automaticamente se preveniamo il default e usiamo FormData su form
+            // Dobbiamo aggiungerla a mano se il bottone che l'ha scatenata non è parte del submit standard
+            formData.append('action', 'scrape_understat_gw'); 
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'started') {
+                    startScrapePolling();
+                } else {
+                    text.innerText = "❌ Errore: " + (data.message || "Impossibile avviare");
+                    btn.disabled = false;
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                text.innerText = "❌ Errore comunicazione server";
+                btn.disabled = false;
+            });
+
+            function startScrapePolling() {
+                const pollInterval = setInterval(() => {
+                    fetch("{% url 'understat_status' %}")
+                        .then(res => res.json())
+                        .then(status => {
+                            const pct = status.progress;
+                            bar.style.width = pct + '%';
+                            bar.innerText = pct + '%';
+                            text.innerText = status.message;
+
+                            if (status.state === 'completed') {
+                                clearInterval(pollInterval);
+                                bar.style.backgroundColor = '#4caf50';
+                                text.innerHTML = "<strong>✅ Dati scaricati! Ricaricamento...</strong>";
+                                setTimeout(() => window.location.reload(), 1500);
+                            } else if (status.state === 'error') {
+                                clearInterval(pollInterval);
+                                bar.style.backgroundColor = '#ff4444';
+                                btn.disabled = false;
+                                btn.innerHTML = 'Scarica Statistiche';
+                                btn.style.opacity = '1';
+                            }
+                        })
+                        .catch(err => console.error('Scrape Polling error:', err));
+                }, 1000);
+            }
+        });
+    </script>
+
+    <!-- CARD PER SCRAPING UNDERSTAT -->
+    <div class="card" style="margin-bottom: 25px;">
+        <h3>📊 Scarica Statistiche Understat</h3>
+        <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.9em;">Scarica xG, Tiri e Cartellini da Understat per una specifica giornata.</p>
+        <form method="post" id="scrapeForm" style="display: flex; align-items: center; gap: 10px;">
+            {% csrf_token %}
+            <input type="number" name="gameweek_number" placeholder="Numero Giornata (es. 13)" value="{{ suggested_round }}" required 
+                   style="flex-grow: 1; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px;">
+            <button type="submit" name="action" value="scrape_understat_gw" id="scrapeBtn" class="btn" style="background-color: #e67e22; width: auto;">
+                Scarica Statistiche
+            </button>
+        </form>
+
+        <!-- SCRAPE PROGRESS BAR -->
+        <div id="scrapeProgressContainer" style="display: none; margin-top: 20px;">
+            <div style="width: 100%; background-color: #e9ecef; border-radius: 10px; overflow: hidden; height: 25px; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);">
+                <div id="scrapeProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #ff9800, #ff5722); transition: width 0.4s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.8em; font-weight: bold;">
+                    0%
+                </div>
+            </div>
+            <p id="scrapeProgressText" style="text-align: center; color: var(--text-muted); font-size: 0.9em; margin-top: 8px; font-style: italic;">
+                Connessione a Understat...
+            </p>
+        </div>
     </div>
 
     <!-- CARD 2: PARTITE IN ATTESA -->
     <div class="card">
-        <h3>📝 Partite in Attesa di Risultato</h3>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>📝 Partite & Dati</h3>
+            <div style="font-size: 0.7em; color: var(--text-muted);">
+                <span style="margin-right: 10px;">🔴 Mancante</span>
+                <span style="margin-right: 10px;">🟡 Parziale (Scraping OK)</span>
+                <span>🟢 Completo</span>
+            </div>
+        </div>
+        
         <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.9em;">Inserisci i risultati finali per aggiornare lo storico e ricalcolare l'IA.</p>
         
         {% if pending_matches %}
@@ -51,6 +232,7 @@
                 <table>
                     <thead>
                         <tr>
+                            <th>Stato</th>
                             <th>Data</th>
                             <th>Match</th>
                             <th>Azione</th>
@@ -59,14 +241,28 @@
                     <tbody>
                         {% for m in pending_matches %}
                         <tr>
+                            <td data-label="Stato" style="text-align: center;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; 
+                                      background-color: 
+                                      {% if m.data_status_color == 'green' %}#00c853
+                                      {% elif m.data_status_color == 'yellow' %}#ffc107
+                                      {% else %}#ff4444{% endif %};"
+                                      title="{% if m.data_status_color == 'yellow' %}Mancano statistiche (es. Possesso){% endif %}">
+                                </span>
+                            </td>
                             <td data-label="Data" style="color: var(--text-muted); font-size: 0.9em;">{{ m.date_time|date:"d/m H:i" }}</td>
                             <td data-label="Match">
                                 <strong>{{ m.home_team.short_name|default:m.home_team.name }}</strong>
                                 <span style="font-size: 0.8em; color: var(--text-muted);">vs</span>
                                 <strong>{{ m.away_team.short_name|default:m.away_team.name }}</strong>
+                                {% if m.status == 'FINISHED' %}
+                                    <span style="font-size: 0.8em; font-weight: bold; margin-left: 5px;">({{ m.result.home_goals }}-{{ m.result.away_goals }})</span>
+                                {% endif %}
                             </td>
                             <td data-label="Azione" style="text-align: right;">
-                                <a href="{% url 'edit_match' m.id %}" class="btn" style="padding: 5px 10px; font-size: 0.8em; background-color: var(--text-muted);">Inserisci</a>
+                                <a href="{% url 'edit_match' m.id %}" class="btn" style="padding: 5px 10px; font-size: 0.8em; background-color: var(--text-muted);">
+                                    {% if m.data_status_color == 'green' %}Modifica{% else %}Inserisci{% endif %}
+                                </a>
                             </td>
                         </tr>
                         {% endfor %}

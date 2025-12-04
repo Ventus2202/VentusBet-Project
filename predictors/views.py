@@ -1,147 +1,113 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
-from .utils import generate_slip, get_multi_market_opportunities, get_form_sequence
-from .models import Match, MatchResult, Prediction, Team, Season, TeamFormSnapshot, Rivalry
-from django.db.models import Q
+from django.contrib import messages
+from django_q.tasks import async_task
+from django.http import JsonResponse
+from django.core.cache import cache
+from .utils import get_form_sequence, calculate_accuracy_metrics, get_probable_starters
+from .models import Match, MatchResult, Prediction, Team, Season, TeamFormSnapshot, Rivalry, PlayerMatchStat, Player
+from django.db.models import Q, Count, Sum
 from operator import attrgetter
-from math import fabs
 from .forms import MatchStatsForm
+from .services import DashboardService, DataStatusService # NUOVO IMPORT
 
 def is_admin(user):
     return user.is_superuser
 
-# ... (other code between imports and dashboard)
-
 def dashboard(request):
-    # 1. Ottimizzazione Query Matches
-    upcoming_query = Match.objects.filter(status='SCHEDULED').select_related('home_team', 'away_team').order_by('date_time')
-    recent_query = Match.objects.filter(status='FINISHED').select_related('home_team', 'away_team').order_by('-date_time')[:5]
-    
-    # Eseguiamo le query dei match (liste)
-    upcoming_matches = list(upcoming_query)
-    recent_matches = list(recent_query)
-    
-    # 2. Bulk Fetch Predictions
-    # Raccogliamo tutti gli ID dei match
-    all_match_ids = [m.id for m in upcoming_matches] + [m.id for m in recent_matches]
-    
-    predictions_qs = Prediction.objects.filter(match_id__in=all_match_ids)
-    # Creiamo una mappa: match_id -> prediction object
-    # (Assumiamo una predizione per match, o prendiamo l'ultima creata se ce ne sono più di una)
-    predictions_map = {}
-    for p in predictions_qs:
-        # Se ci sono più predizioni, questa logica sovrascrive mantenendo l'ultima processata.
-        # Idealmente dovremmo ordinare prima, ma per ora va bene.
-        predictions_map[p.match_id] = p
-
-    # --- LOGICA SCHEDINA (New Engine) ---
-    # Passiamo le prediction degli upcoming matches
-    upcoming_preds = [predictions_map[m.id] for m in upcoming_matches if m.id in predictions_map]
-    schedina = generate_slip(upcoming_preds)
-
-    # 3. Bulk Fetch TeamFormSnapshots (Solo per Upcoming)
-    upcoming_match_ids = [m.id for m in upcoming_matches]
-    snapshots_qs = TeamFormSnapshot.objects.filter(match_id__in=upcoming_match_ids).select_related('team')
-    
-    # Mappa: match_id -> { team_id: snapshot }
-    snapshots_map = {}
-    for snap in snapshots_qs:
-        if snap.match_id not in snapshots_map:
-            snapshots_map[snap.match_id] = {}
-        snapshots_map[snap.match_id][snap.team_id] = snap
-
-    # 4. Bulk Fetch Form Sequences (Ultima forma conosciuta per ogni squadra)
-    # Raccogliamo tutti i team ID coinvolti negli upcoming
-    team_ids = set()
-    for m in upcoming_matches:
-        team_ids.add(m.home_team_id)
-        team_ids.add(m.away_team_id)
-    
-    # Prendiamo l'ultimo snapshot per ogni team. 
-    # Nota: Questo è complesso da fare in una sola query efficiente senza Window Functions.
-    # Per semplicità e performance decenti, facciamo una query che prende gli snapshot recenti ordinati
-    # e poi filtriamo in Python (che è veloce per poche decine di team).
-    latest_forms = {}
-    if team_ids:
-        # Prendiamo gli snapshot recenti di questi team
-        recent_snaps = TeamFormSnapshot.objects.filter(
-            team_id__in=team_ids
-        ).order_by('team_id', '-match__date_time')
-        
-        # Manteniamo solo il primo (il più recente) per ogni team
-        for snap in recent_snaps:
-            if snap.team_id not in latest_forms:
-                latest_forms[snap.team_id] = snap.form_sequence
-
-    def pack_matches(matches, is_upcoming=False):
-        data = []
-        for m in matches:
-            pred = predictions_map.get(m.id)
-            
-            item = {
-                'match': m,
-                'prediction': pred,
-            }
-
-            if is_upcoming:
-                # Recupero form sequence dalla mappa in memoria
-                item['home_form'] = latest_forms.get(m.home_team_id, "")
-                item['away_form'] = latest_forms.get(m.away_team_id, "")
-                
-                if pred:
-                    # Recupero snapshot dalla mappa in memoria
-                    match_snaps = snapshots_map.get(m.id, {})
-                    home_snap = match_snaps.get(m.home_team_id)
-                    away_snap = match_snaps.get(m.away_team_id)
-                    
-                    item['opportunities'] = get_multi_market_opportunities(pred, home_snap, away_snap)
-
-            data.append(item)
-        return data
-
-    context = {
-        'upcoming_matches': pack_matches(upcoming_matches, is_upcoming=True),
-        'recent_matches': pack_matches(recent_matches, is_upcoming=False),
-        'schedina': schedina
-    }
-
+    # Tutta la logica complessa è ora nel Service
+    context = DashboardService.get_dashboard_context()
     return render(request, 'predictors/dashboard.html', context)
 
-# --- 2. CONTROL ROOM (Solo Admin) ---
+# --- STATUS ENDPOINTS ---
+def pipeline_status(request):
+    status = cache.get('pipeline_status', {'state': 'idle', 'progress': 0, 'message': 'In attesa...'})
+    return JsonResponse(status)
+
+def understat_status(request):
+    status = cache.get('scraping_status', {'state': 'idle', 'progress': 0, 'message': 'In attesa...'})
+    return JsonResponse(status)
+
+# --- CONTROL ROOM ---
 @user_passes_test(is_admin)
 def control_panel(request):
     if request.method == 'POST':
         action = request.POST.get('action')
-        try:
-            if action == 'update_fixtures':
-                call_command('update_fixtures')
-                messages.success(request, "Calendario aggiornato da API!")
-            elif action == 'calc_features':
-                call_command('calculate_features')
-                call_command('calculate_elo')
-                messages.success(request, "Features e ELO ricalcolati!")
-            elif action == 'train_ai':
-                call_command('train_model')
-                messages.success(request, "Modello IA (Statistiche) addestrato!")
-            elif action == 'predict_next':
-                call_command('predict_upcoming') 
-                messages.success(request, "Previsioni statistiche generate!")
-        except Exception as e:
-            messages.error(request, f"Errore: {e}")
-        return redirect('control_panel')
+        
+        if action == 'run_full_pipeline':
+            async_task('predictors.tasks.run_pipeline_task')
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({'status': 'started'})
+            return redirect('control_panel')
+        
+        elif action == 'scrape_understat_gw':
+            gameweek = request.POST.get('gameweek_number')
+            if gameweek and gameweek.isdigit():
+                async_task('predictors.tasks.run_scraping_task', gameweek)
+                if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                    return JsonResponse({'status': 'started'})
+                messages.info(request, f"Scraping giornata {gameweek} avviato in background...")
+            else:
+                if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                    return JsonResponse({'status': 'error', 'message': 'Giornata mancante o non valida'})
+                messages.error(request, "Numero di giornata mancante o non valido.")
+            
+            return redirect('control_panel')
 
-    pending_matches = Match.objects.filter(status='SCHEDULED').order_by('date_time')
-    return render(request, 'predictors/control_panel.html', {'pending_matches': pending_matches})
+    # Logica Visualizzazione
+    next_match = Match.objects.filter(status='SCHEDULED').order_by('date_time').first()
+    current_round = next_match.round_number if next_match else 1
+    
+    rounds_of_interest = [current_round - 1, current_round]
+    if current_round == 1: rounds_of_interest = [1]
 
-# --- 3. INSERIMENTO MANUALE ---
+    matches_qs = Match.objects.filter(round_number__in=rounds_of_interest).order_by('date_time')
+    
+    pending_matches = []
+    for m in matches_qs:
+        # Usa il Service centralizzato per il semaforo
+        status, missing_count = DataStatusService.analyze_match_data_status(m)
+        
+        if status != 'green' or m.status == 'SCHEDULED':
+            m.data_status_color = status
+            m.missing_count = missing_count
+            pending_matches.append(m)
+
+    return render(request, 'predictors/control_panel.html', {
+        'pending_matches': pending_matches,
+        'suggested_round': current_round
+    })
+
+@user_passes_test(is_admin)
+def admin_matches(request):
+    last_finished = Match.objects.filter(status='FINISHED').order_by('-date_time').first()
+    default_round = last_finished.round_number if last_finished else 1
+
+    try:
+        selected_round = int(request.GET.get('round', default_round))
+    except ValueError:
+        selected_round = default_round
+    if selected_round < 1: selected_round = 1
+
+    matches = Match.objects.filter(round_number=selected_round).select_related('result', 'home_team', 'away_team').order_by('date_time')
+
+    for m in matches:
+        # Usa il Service centralizzato
+        status, missing_count = DataStatusService.analyze_match_data_status(m)
+        m.data_status_color = status
+
+    return render(request, 'predictors/admin_matches.html', {
+        'matches': matches,
+        'selected_round': selected_round
+    })
+
 @user_passes_test(is_admin)
 def edit_match_stats(request, match_id):
     match = get_object_or_404(Match, id=match_id)
     
-    # Recuperiamo il risultato se esiste, altrimenti ne creiamo uno nuovo (senza salvare su DB)
     try:
         match_result = match.result
-    except MatchResult.DoesNotExist:
+    except MatchResult.DoesNotExist: 
         match_result = MatchResult(match=match)
 
     if request.method == 'POST':
@@ -150,25 +116,20 @@ def edit_match_stats(request, match_id):
             form.save()
             match.status = 'FINISHED'
             match.save()
+            cache.delete('performance_trend_data_v1')
             messages.success(request, f"Dati salvati per {match}")
             
-            # Logic for "Save & Next"
             if 'save_next' in request.POST:
-                # Find next match (scheduled or finished but without full stats)
-                # Here we simply take the next chronological match that is NOT the current one
                 next_match = Match.objects.filter(
                     status='SCHEDULED',
                     date_time__gte=match.date_time
                 ).exclude(id=match.id).order_by('date_time').first()
-
                 if next_match:
                     return redirect('edit_match', match_id=next_match.id)
                 else:
                     messages.info(request, "Nessuna altra partita in programma trovata.")
-
             return redirect('control_panel')
     else:
-        # Il form ora gestisce autonomamente l'estrazione dai campi JSON nell'__init__
         form = MatchStatsForm(instance=match_result)
 
     return render(request, 'predictors/edit_match.html', {'form': form, 'match': match})
@@ -177,7 +138,6 @@ def match_detail(request, match_id):
     match = get_object_or_404(Match, id=match_id)
     prediction = Prediction.objects.filter(match=match).order_by('-created_at').first()
     
-    # Recuperiamo gli snapshot di forma per mostrare i dati pre-partita
     try:
         home_snap = TeamFormSnapshot.objects.filter(match=match, team=match.home_team).first()
         away_snap = TeamFormSnapshot.objects.filter(match=match, team=match.away_team).first()
@@ -185,27 +145,195 @@ def match_detail(request, match_id):
         home_snap = None
         away_snap = None
 
-    # Cerca Derby/Rivalità
     rivalry = Rivalry.objects.filter(
-        Q(team1=match.home_team, team2=match.away_team) | 
+        Q(team1=match.home_team, team2=match.away_team) |
         Q(team1=match.away_team, team2=match.home_team)
     ).first()
+
+    # --- LINEUPS ---
+    home_lineup = PlayerMatchStat.objects.filter(
+        match=match, 
+        team=match.home_team
+    ).select_related('player').order_by('-is_starter', '-minutes')
+
+    away_lineup = PlayerMatchStat.objects.filter(
+        match=match, 
+        team=match.away_team
+    ).select_related('player').order_by('-is_starter', '-minutes')
+
+    is_probable_lineup = False
+    
+    # If no official lineup and match is scheduled -> Estimate Probable
+    if not home_lineup and match.status == 'SCHEDULED':
+        is_probable_lineup = True
+        
+        def build_probable(team, date_lim):
+            pids = get_probable_starters(team, date_lim)
+            players = {p.id: p for p in Player.objects.filter(id__in=pids)}
+            result = []
+            
+            # Counts for module
+            counts = {'DEF': 0, 'MID': 0, 'FWD': 0}
+            
+            for pid in pids:
+                if pid in players:
+                    p = players[pid]
+                    role = p.primary_position
+                    if role in counts: counts[role] += 1
+                    
+                    result.append({
+                        'player': p,
+                        'position': role if role else '?',
+                        'is_starter': True,
+                        'minutes': 'Avg',
+                        'goals': 0,
+                        'xg': 0
+                    })
+            
+            # Determine Module String (e.g. "4-3-3")
+            module = f"{counts['DEF']}-{counts['MID']}-{counts['FWD']}"
+            
+            # Sort by Role: GK -> DEF -> MID -> FWD -> ?
+            role_order = {'GK': 1, 'DEF': 2, 'MID': 3, 'FWD': 4, '?': 5}
+            result.sort(key=lambda x: role_order.get(x['position'], 99))
+            
+            return result, module
+
+        home_lineup, home_module = build_probable(match.home_team, match.date_time)
+        away_lineup, away_module = build_probable(match.away_team, match.date_time)
+    else:
+        home_module = None
+        away_module = None
+
+    # --- COMPARISON LOGIC (IF FINISHED) ---
+    comparison_data = None
+    if match.status == 'FINISHED' and hasattr(match, 'result') and prediction:
+        res = match.result
+        h_stats = res.home_stats or {}
+        a_stats = res.away_stats or {}
+        
+        def get_stat(stats_dict, keys):
+            for k in keys:
+                if k in stats_dict: return float(stats_dict[k])
+            return 0.0
+
+        # List of metrics to compare
+        # Format: (Label, PredictionFieldSuffix, [JSON Keys])
+        metrics_map = [
+            ('Possesso', 'possession', ['possession', 'possesso']),
+            ('Tiri Totali', 'total_shots', ['tiri_totali', 'total_shots']),
+            ('Tiri in Porta', 'shots_on_target', ['tiri_porta', 'shots_on_target']),
+            ('Corner', 'corners', ['corner', 'corners']),
+            ('Falli', 'fouls', ['falli', 'fouls']),
+            ('Gialli', 'yellow_cards', ['gialli', 'yellow_cards']),
+            ('Fuorigioco', 'offsides', ['offsides', 'fuorigioco']),
+        ]
+
+        def get_accuracy_info(label, pred, real):
+            diff = real - pred
+            abs_diff = abs(diff)
+            max_val = max(pred, real, 1)
+            
+            # Calculate Accuracy %
+            # Formula: 100% - Relative Error
+            # Se Pred=0 e Real=0 -> 100%
+            if pred == real:
+                acc_percent = 100
+            else:
+                acc_percent = max(0, round(100 * (1 - (abs_diff / max_val))))
+
+            # Determine Status
+            status = 'bad'
+            if label == 'Goal':
+                if abs_diff == 0: status = 'perfect'
+                elif abs_diff == 1: status = 'good'
+            elif label == 'Possesso':
+                if abs_diff <= 2: status = 'perfect'
+                elif abs_diff <= 8: status = 'good'
+            elif label in ['Tiri Totali', 'Falli']:
+                if abs_diff <= 2: status = 'perfect'
+                elif abs_diff <= 5: status = 'good'
+            else: # Low count stats
+                if abs_diff == 0: status = 'perfect'
+                elif abs_diff <= 2: status = 'good'
+
+            # Determine Label
+            if diff == 0: diff_label = "Esatto"
+            elif diff > 0: diff_label = "Sottostimato" # Reale > Predetto
+            else: diff_label = "Sovrastimato" # Reale < Predetto
+
+            return status, diff_label, acc_percent
+
+        comparison_data = []
+        
+        # 1. GOALS (Special handling as they are model fields)
+        h_status, h_label, h_acc = get_accuracy_info('Goal', prediction.home_goals, res.home_goals)
+        a_status, a_label, a_acc = get_accuracy_info('Goal', prediction.away_goals, res.away_goals)
+        
+        comparison_data.append({
+            'label': 'Goal',
+            'home_pred': prediction.home_goals,
+            'home_real': res.home_goals,
+            'home_diff': res.home_goals - prediction.home_goals,
+            'home_status': h_status,
+            'home_diff_label': h_label,
+            'home_acc': h_acc,
+            'away_pred': prediction.away_goals,
+            'away_real': res.away_goals,
+            'away_diff': res.away_goals - prediction.away_goals,
+            'away_status': a_status,
+            'away_diff_label': a_label,
+            'away_acc': a_acc,
+            'is_main': True
+        })
+
+        # 2. OTHER STATS
+        for label, field_suffix, keys in metrics_map:
+            p_home = getattr(prediction, f'home_{field_suffix}', 0)
+            p_away = getattr(prediction, f'away_{field_suffix}', 0)
+            
+            r_home = int(get_stat(h_stats, keys))
+            r_away = int(get_stat(a_stats, keys))
+            
+            h_status, h_label, h_acc = get_accuracy_info(label, p_home, r_home)
+            a_status, a_label, a_acc = get_accuracy_info(label, p_away, r_away)
+            
+            comparison_data.append({
+                'label': label,
+                'home_pred': p_home,
+                'home_real': r_home,
+                'home_diff': r_home - p_home,
+                'home_status': h_status,
+                'home_diff_label': h_label,
+                'home_acc': h_acc,
+                'away_pred': p_away,
+                'away_real': r_away,
+                'away_diff': r_away - p_away,
+                'away_status': a_status,
+                'away_diff_label': a_label,
+                'away_acc': a_acc,
+                'is_main': False
+            })
 
     context = {
         'match': match,
         'prediction': prediction,
+        'comparison_data': comparison_data, # Passed to template
         'home_snap': home_snap,
         'away_snap': away_snap,
-        'home_form': get_form_sequence(match.home_team), # Usiamo la funzione helper che hai già
+        'home_form': get_form_sequence(match.home_team),
         'away_form': get_form_sequence(match.away_team),
         'rivalry': rivalry,
+        'home_lineup': home_lineup,
+        'away_lineup': away_lineup,
+        'is_probable_lineup': is_probable_lineup,
+        'home_module': home_module,
+        'away_module': away_module,
     }
     return render(request, 'predictors/match_detail.html', context)
-
 def team_detail(request, team_id):
     team = get_object_or_404(Team, id=team_id)
     
-    # Tutte le partite della squadra (Casa o Fuori)
     all_matches = Match.objects.filter(
         Q(home_team=team) | Q(away_team=team)
     ).order_by('-date_time')
@@ -213,7 +341,6 @@ def team_detail(request, team_id):
     played_matches = all_matches.filter(status='FINISHED')
     upcoming_matches = all_matches.filter(status='SCHEDULEED')
 
-    # Calcolo Statistiche di base
     stats = {
         'played': played_matches.count(),
         'wins': 0, 'draws': 0, 'losses': 0,
@@ -240,7 +367,6 @@ def team_detail(request, team_id):
         else:
             stats['draws'] += 1
 
-    # Medie
     if stats['played'] > 0:
         stats['avg_gf'] = round(stats['gf'] / stats['played'], 2)
         stats['avg_ga'] = round(stats['ga'] / stats['played'], 2)
@@ -257,17 +383,13 @@ def team_detail(request, team_id):
     }
     return render(request, 'predictors/team_detail.html', context)
 
-from django.db.models import Count, Sum, Case, When, F, Value, IntegerField
-
 def standings(request):
-    # 1. Inizializza struttura dati per tutte le squadre
     teams = Team.objects.all()
     stats = {t.id: {
         'team': t, 'played': 0, 'points': 0, 'won': 0, 'drawn': 0, 'lost': 0,
         'gf': 0, 'ga': 0, 'gd': 0
     } for t in teams}
 
-    # 2. Aggregazione Partite in Casa
     home_stats = Match.objects.filter(status='FINISHED').values('home_team').annotate(
         played=Count('id'),
         wins=Count('id', filter=Q(result__winner='1')),
@@ -289,7 +411,6 @@ def standings(request):
             s['ga'] += (entry['ga'] or 0)
             s['points'] += (entry['wins'] * 3) + entry['draws']
 
-    # 3. Aggregazione Partite Fuori Casa
     away_stats = Match.objects.filter(status='FINISHED').values('away_team').annotate(
         played=Count('id'),
         wins=Count('id', filter=Q(result__winner='2')),
@@ -311,17 +432,9 @@ def standings(request):
             s['ga'] += (entry['ga'] or 0)
             s['points'] += (entry['wins'] * 3) + entry['draws']
 
-    # 4. Calcolo Differenza Reti e Conversione in Lista
     table = []
     for s in stats.values():
         s['gd'] = s['gf'] - s['ga']
-        # Per compatibilità col template che aspetta attributi diretti (row.name, row.id),
-        # dobbiamo assicurarci che l'oggetto passato al template abbia questi attributi.
-        # Il template attuale usa row.name, row.id, row.logo.
-        # Creiamo un oggetto "ibrido" o passiamo il dizionario modificando il template per usare row.team.name?
-        # Abbiamo appena modificato il template per usare row.name.
-        # Quindi 's' deve comportarsi come un oggetto con attributi.
-        # Creiamo una classe al volo o un SimpleNamespace, o riattacchiamo gli attributi all'oggetto Team.
         team_obj = s['team']
         team_obj.played = s['played']
         team_obj.points = s['points']
@@ -333,64 +446,88 @@ def standings(request):
         team_obj.gd = s['gd']
         table.append(team_obj)
 
-    # 5. Ordinamento
     table = sorted(table, key=attrgetter('points', 'gd', 'gf'), reverse=True)
 
-    # Aggiungi posizione
     for i, row in enumerate(table):
         row.position = i + 1
 
     return render(request, 'predictors/standings.html', {'table': table})
 
 def performance(request):
-    # Considera solo partite finite con una previsione e un risultato
-    matches = Match.objects.filter(
+    all_finished = Match.objects.filter(
         status='FINISHED', 
         predictions__isnull=False,
         result__isnull=False
-    ).distinct().order_by('-date_time')
+    ).select_related('result', 'home_team', 'away_team', 'season').prefetch_related('predictions').order_by('date_time')
 
-    comparisons = []
-    correct_outcomes = 0
-    total_goal_error = 0
-    total_matches = matches.count()
-
-    for match in matches:
-        pred = match.predictions.order_by('-created_at').first()
-        res = match.result
+    matches_by_round = {}
+    rounds_available = []
+    
+    for m in all_finished:
+        r = m.round_number
+        if r not in matches_by_round:
+            matches_by_round[r] = []
+            rounds_available.append(r)
         
-        # Determina esito previsto
-        if pred.home_goals > pred.away_goals:
-            predicted_winner = '1'
-        elif pred.away_goals > pred.home_goals:
-            predicted_winner = '2'
-        else:
-            predicted_winner = 'X'
-
-        is_correct = (predicted_winner == res.winner)
-        if is_correct:
-            correct_outcomes += 1
-        
-        # Calcolo errore goal
-        home_error = fabs(pred.home_goals - res.home_goals)
-        away_error = fabs(pred.away_goals - res.away_goals)
-        total_goal_error += (home_error + away_error)
-
-        comparisons.append({
-            'match': match,
+        pred = m.predictions.order_by('-created_at').first()
+        matches_by_round[r].append({
+            'match': m,
             'prediction': pred,
-            'result': res,
-            'is_correct': is_correct
+            'result': m.result
         })
 
-    # Calcolo statistiche aggregate
-    accuracy = (correct_outcomes / total_matches * 100) if total_matches > 0 else 0
-    mae_goals = (total_goal_error / (total_matches * 2)) if total_matches > 0 else 0
+    rounds_available = sorted(list(set(rounds_available)))
+    
+    if not rounds_available:
+        return render(request, 'predictors/performance.html', {'no_data': True})
+
+    def calculate_trends():
+        data = []
+        for r in rounds_available:
+            metrics = calculate_accuracy_metrics(matches_by_round[r])
+            
+            data.append({
+                'round': r,
+                'global_avg': metrics['global_score_avg'],
+                'acc_1x2': metrics['acc_1x2'],
+                'acc_goals': metrics['acc_total_goals'], 
+                'acc_shots': metrics['acc_total_shots'],
+                'acc_shots_ot': metrics['acc_shots_ot'],
+                'acc_corners': metrics['acc_corners'],
+                'acc_fouls': metrics['acc_fouls'],
+                'acc_cards': metrics['acc_cards'],
+                'acc_offsides': metrics['acc_offsides']
+            })
+        return data
+
+    trend_data = cache.get_or_set('performance_trend_data_v1', calculate_trends, 3600)
+
+    try:
+        default_round = rounds_available[-1]
+        selected_round = int(request.GET.get('round', default_round))
+    except ValueError:
+        selected_round = rounds_available[-1]
+
+    if selected_round not in matches_by_round:
+        selected_round = rounds_available[-1]
+
+    current_metrics = calculate_accuracy_metrics(matches_by_round[selected_round])
+    
+    try:
+        curr_idx = rounds_available.index(selected_round)
+        prev_r = rounds_available[curr_idx - 1] if curr_idx > 0 else None
+        next_r = rounds_available[curr_idx + 1] if curr_idx < len(rounds_available) - 1 else None
+    except ValueError:
+        prev_r = None
+        next_r = None
 
     context = {
-        'accuracy': accuracy,
-        'mae_goals': mae_goals,
-        'total_matches': total_matches,
-        'comparisons': comparisons
+        'trend_data': trend_data,
+        'current_metrics': current_metrics,
+        'selected_round': selected_round,
+        'rounds_available': rounds_available,
+        'prev_round': prev_r,
+        'next_round': next_r,
     }
+    
     return render(request, 'predictors/performance.html', context)

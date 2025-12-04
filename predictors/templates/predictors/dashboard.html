@@ -21,7 +21,7 @@
                     {{ item.match.away_team.short_name|default:item.match.away_team.name }}
                 </div>
             </div>
-            <div style="background: var(--accent-color); padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 1.2em; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+            <div title="{{ item.tip.reasoning }}" style="cursor: help; background: var(--accent-color); padding: 8px 12px; border-radius: 6px; font-weight: bold; font-size: 1.2em; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                 {{ item.tip.label }}
             </div>
         </div>
@@ -152,30 +152,6 @@
     {% empty %}
     <p style="color: var(--text-muted);">Nessuna partita programmata al momento.</p>
     {% endfor %}
-</div>
-
-<!-- SEZIONE 2: ULTIMI RISULTATI -->
-<div>
-    <h2>🏁 Ultimi Risultati</h2>
-    
-    <div class="recent-matches-list">
-        {% for item in recent_matches %}
-        <div class="card recent-match-card">
-            <div class="recent-match-info">
-                <span class="recent-match-date">{{ item.match.date_time|date:"d M Y" }}</span>
-                {% include 'predictors/components/team_info.html' with team=item.match.home_team team_link_disabled=True %}
-            </div>
-
-            <div class="recent-match-score">
-                {{ item.match.result.home_goals }} - {{ item.match.result.away_goals }}
-            </div>
-
-            <div class="recent-match-info">
-                {% include 'predictors/components/team_info.html' with team=item.match.away_team team_link_disabled=True %}
-            </div>
-        </div>
-        {% endfor %}
-    </div>
 </div>
 
 {% endblock %}

@@ -1,5 +1,18 @@
 from django.contrib import admin
-from .models import League, Season, Team, Match, MatchResult, TeamFormSnapshot, Prediction, DynamicFactor, OddsMovement, ModelRegistry
+from .models import League, Season, Team, Match, MatchResult, TeamFormSnapshot, Prediction, DynamicFactor, OddsMovement, ModelRegistry, Player, PlayerMatchStat
+
+@admin.register(Player)
+class PlayerAdmin(admin.ModelAdmin):
+    list_display = ('name', 'current_team', 'primary_position', 'status', 'expected_return')
+    list_filter = ('status', 'primary_position', 'current_team')
+    search_fields = ('name', 'current_team__name')
+    list_editable = ('status', 'expected_return') # Allows quick editing from the list view
+
+@admin.register(PlayerMatchStat)
+class PlayerMatchStatAdmin(admin.ModelAdmin):
+    list_display = ('player', 'match', 'minutes', 'goals', 'xg', 'rating')
+    search_fields = ('player__name', 'match__home_team__name', 'match__away_team__name')
+    list_filter = ('match__season',)
 
 @admin.register(League)
 class LeagueAdmin(admin.ModelAdmin):

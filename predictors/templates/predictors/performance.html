@@ -1,64 +1,414 @@
 {% extends 'predictors/base.html' %}
 
 {% block content %}
-<h2>🤖 Performance IA</h2>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-{% if total_matches > 0 %}
-    <!-- Statistiche Aggregate -->
-    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px;">
-        <div class="card">
-            <div>{{ accuracy|floatformat:2 }}%</div>
-            <div>ACCURATEZZA ESITO</div>
-        </div>
-        <div class="card">
-            <div>{{ mae_goals|floatformat:2 }}</div>
-            <div>ERRORE MEDIO GOAL</div>
-        </div>
-        <div class="card">
-            <div>{{ total_matches }}</div>
-            <div>PARTITE VALUTATE</div>
-        </div>
+<!-- DEFINIZIONE FUNZIONI UI (Prima del resto) -->
+<script>
+    function toggleDetails(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+        }
+    }
+</script>
+
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px;">
+    <h1>📈 Performance Center</h1>
+    
+    <!-- STEPPER NAVIGATION -->
+    <div style="display: flex; align-items: center; background: white; padding: 5px; border-radius: 30px; border: 1px solid var(--border-color); box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        {% if prev_round %}
+            <a href="?round={{ prev_round }}" class="nav-arrow">❮</a>
+        {% else %}
+            <span class="nav-arrow disabled">❮</span>
+        {% endif %}
+
+        <span style="margin: 0 15px; font-weight: bold; color: var(--primary-color);">Giornata {{ selected_round }}</span>
+
+        {% if next_round %}
+            <a href="?round={{ next_round }}" class="nav-arrow">❯</a>
+        {% else %}
+            <span class="nav-arrow disabled">❯</span>
+        {% endif %}
     </div>
+</div>
 
-    <!-- Dettaglio Confronti -->
-    <div class="card">
-        <h3>Confronto Previsioni vs Risultati</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>PARTITA</th>
-                    <th>PREVISIONE</th>
-                    <th>RISULTATO</th>
-                    <th>ESITO CORRETTO?</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in comparisons %}
-                <tr>
-                    <td data-label="Partita">
-                        <a href="{% url 'match_detail' item.match.id %}">
-                            {{ item.match.home_team.short_name }} vs {{ item.match.away_team.short_name }}
-                        </a>
-                    </td>
-                    <td data-label="Previsione">{{ item.prediction.home_goals }} - {{ item.prediction.away_goals }}</td>
-                    <td data-label="Risultato">{{ item.result.home_goals }} - {{ item.result.away_goals }}</td>
-                    <td data-label="Esito Corretto?">
-                        {% if item.is_correct %}
-                            <span>✅</span>
-                        {% else %}
-                            <span>❌</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+{% if no_data %}
+    <div class="card" style="text-align: center; padding: 50px;">
+        <h2 style="color: var(--text-muted);">Nessun dato disponibile</h2>
+        <p>Attendi che vengano giocate le prime partite.</p>
     </div>
 {% else %}
-    <div class="card" style="text-align: center; padding: 40px;">
-        <h3>Nessuna partita ancora valutata.</h3>
-        <p>Questa pagina si popolerà automaticamente quando le partite con una previsione verranno segnate come "Finite" e avranno un risultato.</p>
+
+    <!-- SECTION 1: KPI ULTIMA GIORNATA -->
+    <div class="card" style="text-align: center; margin-bottom: 30px; background: linear-gradient(135deg, #ffffff, #f8f9fa);">
+        <h3 style="margin-bottom: 10px; color: var(--text-muted); font-size: 1.1em;">PRECISIONE GLOBALE MEDIA (Giornata {{ selected_round }})</h3>
+        
+        <div style="font-size: 4em; font-weight: bold; color: var(--primary-color); margin: 10px 0;">
+            {{ current_metrics.global_score_avg }}%
+        </div>
+        
+        <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 15px;">
+            Media aggregata di tutte le metriche statistiche (Esito 1X2, Goal, Tiri, Corner, Falli, Cartellini, Fuorigioco)
+        </p>
+
+                                <button type="button" onclick="toggleDetails('kpiDetails')" class="btn" style="background-color: transparent; color: var(--text-main) !important; border: 1px solid var(--primary-color);">
+                                    ⬇ Espandi Dettaglio Completo
+                                </button>        <div id="kpiDetails" style="display: none; margin-top: 25px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;">
+                
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_1x2 }}%</div>
+                    <div class="stat-label">Esito 1X2</div>
+                </div>
+
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_total_goals }}%</div>
+                    <div class="stat-label">Goal Totali</div>
+                </div>
+
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_total_shots }}%</div>
+                    <div class="stat-label">Tiri Totali</div>
+                </div>
+
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_shots_ot }}%</div>
+                    <div class="stat-label">Tiri in Porta</div>
+                </div>
+
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_corners }}%</div>
+                    <div class="stat-label">Corner</div>
+                </div>
+
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_fouls }}%</div>
+                    <div class="stat-label">Falli</div>
+                </div>
+
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_cards }}%</div>
+                    <div class="stat-label">Cartellini</div>
+                </div>
+
+                <div class="stat-box">
+                    <div class="stat-val">{{ current_metrics.acc_offsides }}%</div>
+                    <div class="stat-label">Fuorigioco</div>
+                </div>
+
+            </div>
+        </div>
     </div>
+
+    <!-- SECTION 2: GRAFICO TREND -->
+    <div class="card" style="margin-bottom: 30px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+            <h3>📉 Andamento Storico</h3>
+            
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <label for="metricSelect" style="font-weight: 500; color: var(--text-muted);">Metrica:</label>
+                <select id="metricSelect" class="form-select" onchange="updateChart()" style="padding: 8px; border-radius: 5px; border: 1px solid var(--border-color); background-color: #fff; color: var(--text-main); outline: none;">
+                    <option value="global">Precisione Globale</option>
+                    <option value="acc1x2">Precisione 1X2</option>
+                    <option value="accTotalGoals">Precisione Goal Totali</option>
+                    <option value="accShots">Precisione Tiri Totali</option>
+                    <option value="accShotsOT">Precisione Tiri in Porta</option>
+                    <option value="accCorners">Precisione Corner</option>
+                    <option value="accFouls">Precisione Falli</option>
+                    <option value="accCards">Precisione Cartellini</option>
+                    <option value="accOffsides">Precisione Fuorigioco</option>
+                </select>
+            </div>
+        </div>
+        
+        <div style="height: 300px;">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- SECTION 3: LISTA MATCH -->
+    <div style="margin-top: 30px;">
+        <h3 style="margin-bottom: 20px;">📝 Dettaglio Partite - Giornata {{ selected_round }}</h3>
+
+        {% if current_metrics.matches_detail %}
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+            {% for item in current_metrics.matches_detail %}
+            <a href="{% url 'match_detail' item.match.id %}" style="text-decoration: none; color: inherit; display: block;">
+                <div class="card recent-match-card" style="margin-bottom: 0; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; transition: transform 0.2s, box-shadow 0.2s;">
+                    
+                    <!-- 1. DATE (Left) -->
+                    <div style="font-size: 0.85em; color: var(--text-muted); width: 60px; text-align: center; line-height: 1.4;">
+                        <div style="font-weight: bold;">{{ item.match.date_time|date:"d/m" }}</div>
+                        <div>{{ item.match.date_time|date:"H:i" }}</div>
+                    </div>
+
+                    <!-- 2. TEAMS & SCORE (Center) - Aligned -->
+                    <div class="match-center-section" style="display: flex; justify-content: space-between; align-items: center; flex-grow: 1; flex-shrink: 0;">
+                        <div class="team home" style="display: flex; align-items: center; gap: 10px; width: 33%; justify-content: flex-end; text-align: right;">
+                            <span class="team-name" style="font-weight: 600;">{{ item.match.home_team.short_name|default:item.match.home_team.name }}</span>
+                            {% if item.match.home_team.logo %}
+                                <img src="{{ item.match.home_team.logo.url }}" alt="{{ item.match.home_team.name }}" class="team-logo" style="margin: 0; width: 40px; height: 40px;">
+                            {% else %}
+                                <div class="logo-placeholder" style="width: 40px; height: 40px; font-size: 1.2em; margin: 0;">
+                                    {{ item.match.home_team.name|slice:":1" }}
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="score" style="width: 33%; text-align: center; font-weight: bold; font-size: 1.6rem;">
+                            <div style="font-size: 0.8em;">{{ item.result.home_goals }} - {{ item.result.away_goals }}</div>
+                            <div style="font-size: 0.5em; font-weight: bold; margin-top: 5px; 
+                                color: {% if item.is_correct_1x2 %}#00c853{% else %}#ff4444{% endif %};">
+                                {{ item.prediction.home_goals }}-{{ item.prediction.away_goals }} (
+                                {% if item.prediction.home_goals > item.prediction.away_goals %}
+                                    1
+                                {% elif item.prediction.home_goals < item.prediction.away_goals %}
+                                    2
+                                {% else %}
+                                    X
+                                {% endif %}
+                                )
+                            </div>
+                        </div>
+
+                        <div class="team away" style="display: flex; align-items: center; gap: 10px; width: 33%; justify-content: flex-start; text-align: left;">
+                            {% if item.match.away_team.logo %}
+                                <img src="{{ item.match.away_team.logo.url }}" alt="{{ item.match.away_team.name }}" class="team-logo" style="margin: 0; width: 40px; height: 40px;">
+                            {% else %}
+                                <div class="logo-placeholder" style="width: 40px; height: 40px; font-size: 1.2em; margin: 0;">
+                                    {{ item.match.away_team.name|slice:":1" }}
+                                </div>
+                            {% endif %}
+                            <span class="team-name" style="font-weight: 600;">{{ item.match.away_team.short_name|default:item.match.away_team.name }}</span>
+                        </div>
+                    </div>
+                    <!-- 3. PRECISION (Right) -->
+                    <div style="text-align: center; width: 80px; border-left: 1px solid var(--border-color); padding-left: 15px;">
+                        <div style="font-size: 0.7em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px;">Precisione</div>
+                        <div style="font-weight: 800; font-size: 1.4em; color: {% if item.color == 'green' %}#00c853{% elif item.color == 'yellow' %}#ffc107{% else %}#ff4444{% endif %};">
+                            {{ item.score }}%
+                        </div>
+                    </div>
+
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+            <div class="card" style="padding: 40px; text-align: center; color: var(--text-muted); background: #f8f9fa;">
+                Nessuna partita analizzata trovata per questa giornata.
+            </div>
+        {% endif %}
+    </div>
+
 {% endif %}
+
+<style>
+    .nav-arrow {
+        width: 30px; height: 30px;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 50%;
+        text-decoration: none;
+        color: var(--text-color);
+        font-weight: bold;
+        transition: background 0.2s;
+    }
+    .nav-arrow:hover:not(.disabled) { background-color: #e9ecef; }
+    .nav-arrow.disabled { color: #ccc; cursor: default; }
+
+    /* TOOLTIP STYLES */
+    .progress-container {
+        position: relative;
+        flex-grow: 1; 
+        background-color: #e9ecef; 
+        height: 12px; 
+        border-radius: 6px; 
+        cursor: help;
+    }
+    .progress-bar {
+        height: 100%; 
+        border-radius: 6px;
+        transition: width 0.5s ease;
+    }
+    .tooltip-text {
+        visibility: hidden;
+        width: 260px;
+        background-color: rgba(30, 30, 30, 0.95);
+        color: #fff;
+        text-align: left;
+        border-radius: 6px;
+        padding: 12px;
+        position: absolute;
+        z-index: 100;
+        bottom: 140%; 
+        left: 50%;
+        transform: translateX(-50%);
+        opacity: 0;
+        transition: opacity 0.2s;
+        font-size: 0.75em;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        pointer-events: none; /* Evita flickering */
+    }
+    .tooltip-text::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -6px;
+        border-width: 6px;
+        border-style: solid;
+        border-color: rgba(30, 30, 30, 0.95) transparent transparent transparent;
+    }
+    .progress-container:hover .tooltip-text {
+        visibility: visible;
+        opacity: 1;
+    }
+    .detail-row { display: flex; justify-content: space-between; margin-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 2px; }
+    .detail-row:last-child { border-bottom: none; }
+    
+    .stat-box {
+        flex: 1 1 100px;
+        min-width: 90px;
+        text-align: center;
+        padding: 10px;
+        background-color: white;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .stat-val { font-size: 1.4em; font-weight: bold; color: #333; }
+    .stat-label { font-size: 0.8em; color: var(--text-muted); }
+</style>
+
+<script>
+    // CHART DATA FROM DJANGO
+    let trendChartInstance = null;
+    let trendData = [];
+
+    document.addEventListener("DOMContentLoaded", function() {
+        try {
+            trendData = [
+                {% for d in trend_data %}
+                    { 
+                        round: "G{{ d.round }}", 
+                        global: {{ d.global_avg }},
+                        acc1x2: {{ d.acc_1x2 }},
+                        accTotalGoals: {{ d.acc_goals }},
+                        accShots: {{ d.acc_shots }},
+                        accShotsOT: {{ d.acc_shots_ot }},
+                        accCorners: {{ d.acc_corners }},
+                        accFouls: {{ d.acc_fouls }},
+                        accCards: {{ d.acc_cards }},
+                        accOffsides: {{ d.acc_offsides }}
+                    },
+                {% endfor %}
+            ];
+
+            if (trendData.length > 0) {
+                initChart();
+            }
+        } catch (e) {
+            console.error("Errore inizializzazione grafici:", e);
+        }
+    });
+
+    function initChart() {
+        const ctx = document.getElementById('trendChart');
+        if (!ctx) return;
+
+        const labels = trendData.map(d => d.round);
+        // Default: Global
+        const defaultData = trendData.map(d => d.global);
+
+        trendChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Precisione Globale (%)',
+                    data: defaultData,
+                    borderColor: '#6200ea',
+                    backgroundColor: 'rgba(98, 0, 234, 0.1)',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, max: 100 } }
+            }
+        });
+    }
+
+    function updateChart() {
+        if (!trendChartInstance) return;
+
+        const select = document.getElementById('metricSelect');
+        const value = select.value;
+        
+        let newData = [];
+        let newLabel = "";
+        let newColor = "";
+        let newBg = "";
+
+        if (value === 'global') {
+            newData = trendData.map(d => d.global);
+            newLabel = 'Precisione Globale (%)';
+            newColor = '#6200ea';
+            newBg = 'rgba(98, 0, 234, 0.1)';
+        } else if (value === 'acc1x2') {
+            newData = trendData.map(d => d.acc1x2);
+            newLabel = 'Precisione 1X2 (%)';
+            newColor = '#212529';
+            newBg = 'rgba(33, 37, 41, 0.1)';
+        } else if (value === 'accTotalGoals') {
+            newData = trendData.map(d => d.accTotalGoals);
+            newLabel = 'Precisione Goal (%)';
+            newColor = '#00c853';
+            newBg = 'rgba(0, 200, 83, 0.1)';
+        } else if (value === 'accShots') {
+            newData = trendData.map(d => d.accShots);
+            newLabel = 'Precisione Tiri Totali (%)';
+            newColor = '#2962ff';
+            newBg = 'rgba(41, 98, 255, 0.1)';
+        } else if (value === 'accShotsOT') {
+            newData = trendData.map(d => d.accShotsOT);
+            newLabel = 'Precisione Tiri in Porta (%)';
+            newColor = '#0091ea';
+            newBg = 'rgba(0, 145, 234, 0.1)';
+        } else if (value === 'accCorners') {
+            newData = trendData.map(d => d.accCorners);
+            newLabel = 'Precisione Corner (%)';
+            newColor = '#ff9800';
+            newBg = 'rgba(255, 152, 0, 0.1)';
+        } else if (value === 'accFouls') {
+            newData = trendData.map(d => d.accFouls);
+            newLabel = 'Precisione Falli (%)';
+            newColor = '#ff5252';
+            newBg = 'rgba(255, 82, 82, 0.1)';
+        } else if (value === 'accCards') {
+            newData = trendData.map(d => d.accCards);
+            newLabel = 'Precisione Cartellini (%)';
+            newColor = '#ffeb3b';
+            newBg = 'rgba(255, 235, 59, 0.2)'; // Slightly more opaque for yellow
+        } else if (value === 'accOffsides') {
+            newData = trendData.map(d => d.accOffsides);
+            newLabel = 'Precisione Fuorigioco (%)';
+            newColor = '#9e9e9e';
+            newBg = 'rgba(158, 158, 158, 0.1)';
+        }
+
+        trendChartInstance.data.datasets[0].data = newData;
+        trendChartInstance.data.datasets[0].label = newLabel;
+        trendChartInstance.data.datasets[0].borderColor = newColor;
+        trendChartInstance.data.datasets[0].backgroundColor = newBg;
+        trendChartInstance.update();
+    }
+</script>
 
 {% endblock %}

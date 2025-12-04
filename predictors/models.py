@@ -55,6 +55,28 @@ class Team(models.Model):
         verbose_name = "Squadra"
         verbose_name_plural = "Squadre"
 
+class Player(models.Model):
+    """
+    Anagrafica Giocatori. 
+    Identificati univocamente dall'ID di Understat.
+    """
+    name = models.CharField(max_length=100, verbose_name="Nome")
+    understat_id = models.CharField(max_length=50, unique=True, verbose_name="ID Understat")
+    current_team = models.ForeignKey(Team, on_delete=models.SET_NULL, null=True, blank=True, related_name='current_players', verbose_name="Squadra Attuale")
+    primary_position = models.CharField(max_length=10, blank=True, null=True, verbose_name="Ruolo Principale")
+    
+    # Status Giocatore (Manuale o da API future)
+    STATUS_CHOICES = [('AVAILABLE', 'Disponibile'), ('INJURED', 'Infortunato'), ('SUSPENDED', 'Squalificato')]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='AVAILABLE', verbose_name="Stato")
+    expected_return = models.DateField(null=True, blank=True, verbose_name="Rientro Previsto")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Giocatore"
+        verbose_name_plural = "Giocatori"
+
 class Rivalry(models.Model):
     """
     Definisce le rivalità storiche (Derby) per il calcolo dei fattori psicologici.
@@ -128,6 +150,47 @@ class MatchResult(models.Model):
         verbose_name = "Risultato Match"
         verbose_name_plural = "Risultati Match"
 
+class PlayerMatchStat(models.Model):
+    """
+    Statistiche dettagliate del singolo giocatore in una partita (Lineup).
+    """
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name='match_stats')
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='player_stats')
+    team = models.ForeignKey(Team, on_delete=models.CASCADE) # La squadra con cui ha giocato questa partita
+    
+    # Dati da Roster Understat
+    position = models.CharField(max_length=10, verbose_name="Posizione") # GK, DC, FW...
+    is_starter = models.BooleanField(default=False, verbose_name="Titolare")
+    minutes = models.IntegerField(default=0, verbose_name="Minuti")
+    
+    goals = models.IntegerField(default=0)
+    assists = models.IntegerField(default=0)
+    shots = models.IntegerField(default=0)
+    key_passes = models.IntegerField(default=0)
+    yellow_cards = models.IntegerField(default=0)
+    red_cards = models.IntegerField(default=0)
+    
+    xg = models.FloatField(default=0.0, verbose_name="xG")
+    xa = models.FloatField(default=0.0, verbose_name="xA")
+    xg_chain = models.FloatField(default=0.0, verbose_name="xG Chain")
+    xg_buildup = models.FloatField(default=0.0, verbose_name="xG Buildup")
+    
+    # Rating calcolato (opzionale, per futuri sviluppi)
+    rating = models.FloatField(default=6.0, verbose_name="Voto")
+
+    # --- NUOVI CAMPI PORTIERI ---
+    saves = models.IntegerField(default=0, verbose_name="Parate")
+    goals_conceded = models.IntegerField(default=0, verbose_name="Gol Subiti")
+    clean_sheet = models.BooleanField(default=False, verbose_name="Clean Sheet")
+
+    def __str__(self):
+        return f"{self.player} in {self.match}"
+
+    class Meta:
+        verbose_name = "Statistica Giocatore (Match)"
+        verbose_name_plural = "Statistiche Giocatori (Match)"
+        unique_together = ('player', 'match')
+
 
 # ==========================================
 # 3. MODULO FATTORI (Input ML)
@@ -157,6 +220,11 @@ class TeamFormSnapshot(models.Model):
     # --- FATTORI PSICOLOGICI (Step 2 Upgrade) ---
     is_derby = models.IntegerField(default=0, verbose_name="Intensità Derby (0-10)")
     pressure_index = models.FloatField(default=0.0, verbose_name="Indice Pressione (0-100)")
+
+    # --- FATTORI GIOCATORI (Step 3 Upgrade) ---
+    starters_avg_xg_last_5 = models.FloatField(default=0.0, verbose_name="Media xG Titolari (last 5)")
+    starters_avg_rating_last_5 = models.FloatField(default=6.0, verbose_name="Media Voto Titolari (last 5)")
+    key_players_impact_score = models.FloatField(default=1.0, verbose_name="Impatto Giocatori Chiave (0-1)")
 
     class Meta:
         verbose_name = "Snapshot Forma"
@@ -202,6 +270,35 @@ class DynamicFactor(models.Model):
 # 4. MODULO INTELLIGENZA (Output ML)
 # ==========================================
 
+class BettingConfiguration(models.Model):
+    """
+    Singleton per la configurazione centralizzata delle strategie di scommessa.
+    Sostituisce i 'magic numbers' hardcoded nel codice.
+    """
+    # --- SOGLIE GLOBALI ---
+    min_confidence_score = models.IntegerField(default=60, verbose_name="Punteggio Minimo Confidenza")
+    slip_min_score = models.IntegerField(default=70, verbose_name="Punteggio Minimo Schedina")
+    slip_size = models.IntegerField(default=4, verbose_name="Num. Eventi Schedina")
+
+    # --- SOGLIE 1X2 ---
+    win_threshold = models.FloatField(default=0.6, verbose_name="Soglia Goal per Vittoria (0.6)")
+    draw_threshold = models.FloatField(default=0.3, verbose_name="Soglia Goal per Pareggio (0.3)")
+
+    # --- CONFIGURAZIONE MERCATI (JSON) ---
+    # Memorizza il dizionario 'market_config' di utils.py
+    market_config = models.JSONField(default=dict, verbose_name="Configurazione Mercati (JSON)", help_text="Definisce volatilità, margini e gap per ogni statistica.")
+
+    class Meta:
+        verbose_name = "Configurazione Betting"
+        verbose_name_plural = "Configurazione Betting"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1 # Singleton: forza sempre ID 1
+        super(BettingConfiguration, self).save(*args, **kwargs)
+
+    def __str__(self):
+        return "Configurazione Attiva"
+
 class ModelRegistry(models.Model):
     name = models.CharField(max_length=100, unique=True, help_text="Es: RandomForest_v1")
     description = models.TextField(blank=True)
@@ -217,6 +314,7 @@ class Prediction(models.Model):
     
     # --- PREVISIONI CASA ---
     home_goals = models.IntegerField(default=0)
+    home_possession = models.IntegerField(default=50, verbose_name="Possesso Casa (%)")
     home_total_shots = models.IntegerField(default=0)
     home_shots_on_target = models.IntegerField(default=0)
     home_corners = models.IntegerField(default=0)
@@ -226,6 +324,7 @@ class Prediction(models.Model):
 
     # --- PREVISIONI OSPITE ---
     away_goals = models.IntegerField(default=0)
+    away_possession = models.IntegerField(default=50, verbose_name="Possesso Ospite (%)")
     away_total_shots = models.IntegerField(default=0)
     away_shots_on_target = models.IntegerField(default=0)
     away_corners = models.IntegerField(default=0)

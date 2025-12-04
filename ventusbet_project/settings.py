@@ -43,7 +43,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'predictors'
+    'predictors',
+    'django_q', # django-q2 package
 ]
 
 MIDDLEWARE = [
@@ -136,3 +137,28 @@ STATICFILES_DIRS = [
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# --- CACHE CONFIGURATION ---
+# Essential for sharing status between Web Process and Background Worker
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+    }
+}
+
+# --- DJANGO Q CONFIGURATION ---
+# Task Queue System configuration
+Q_CLUSTER = {
+    'name': 'ventusbet_cluster',
+    'workers': 1,  # Keep it simple for local/MVP
+    'recycle': 500,
+    'timeout': 1800, # 30 minutes timeout for heavy ML tasks
+    'retry': 1860,   # Must be larger than timeout
+    'compress': True,
+    'save_limit': 250,
+    'queue_limit': 500,
+    'cpu_affinity': 1,
+    'label': 'Django Q',
+    'orm': 'default',  # Use Django's ORM as the broker
+}

@@ -1,0 +1,112 @@
+{% extends 'predictors/base.html' %}
+
+{% block content %}
+<div style="margin-bottom: 30px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h1>🔧 Gestione Match Conclusi</h1>
+        <a href="{% url 'control_panel' %}" class="btn" style="background-color: var(--text-muted); font-size: 0.9em;">⬅ Torna alla Control Room</a>
+    </div>
+
+    <!-- FILTRO GIORNATA -->
+    <div class="card" style="text-align: center; padding: 20px;">
+        <div style="display: flex; justify-content: center; align-items: center; gap: 20px;">
+            
+            <!-- Freccia Indietro -->
+            <form method="get">
+                <input type="hidden" name="round" value="{{ selected_round|add:'-1' }}">
+                <button type="submit" class="btn" style="width: 40px; height: 40px; padding: 0; border-radius: 50%; font-size: 1.2em;">❮</button>
+            </form>
+            
+            <!-- Input Diretto -->
+            <form method="get" style="text-align: center;">
+                <div style="font-size: 0.8em; color: var(--text-muted); text-transform: uppercase;">GIORNATA</div>
+                <input type="number" name="round" value="{{ selected_round }}" 
+                       style="font-size: 2em; font-weight: bold; width: 80px; text-align: center; border: none; background: transparent; color: var(--primary-color);"
+                       onchange="this.form.submit()">
+            </form>
+
+            <!-- Freccia Avanti -->
+            <form method="get">
+                <input type="hidden" name="round" value="{{ selected_round|add:'1' }}">
+                <button type="submit" class="btn" style="width: 40px; height: 40px; padding: 0; border-radius: 50%; font-size: 1.2em;">❯</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- LISTA MATCH -->
+    <div class="card">
+        {% if matches %}
+            <div class="prediction-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">Stato</th>
+                            <th>Data</th>
+                            <th>Match</th>
+                            <th>Risultato</th>
+                            <th style="text-align: right;">Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in matches %}
+                        <tr>
+                            <!-- PALLINO STATO -->
+                            <td style="text-align: center;">
+                                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; 
+                                      background-color: 
+                                      {% if m.data_status_color == 'green' %}#00c853
+                                      {% elif m.data_status_color == 'yellow' %}#ffc107
+                                      {% else %}#ff4444{% endif %};"
+                                      title="{% if m.data_status_color == 'green' %}Completo{% elif m.data_status_color == 'yellow' %}Parziale{% else %}Mancante{% endif %}">
+                                </span>
+                            </td>
+                            
+                            <td style="color: var(--text-muted); font-size: 0.9em;">
+                                {{ m.date_time|date:"d/m H:i" }}
+                            </td>
+                            
+                            <td>
+                                <strong>{{ m.home_team.name }}</strong>
+                                <span style="font-size: 0.8em; color: var(--text-muted); margin: 0 5px;">vs</span>
+                                <strong>{{ m.away_team.name }}</strong>
+                            </td>
+
+                            <td style="font-weight: bold; font-size: 1.1em; color: var(--primary-color);">
+                                {% if m.result %}
+                                    {{ m.result.home_goals }} - {{ m.result.away_goals }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+
+                            <td style="text-align: right;">
+                                <a href="{% url 'edit_match' m.id %}" class="btn" style="padding: 6px 15px; font-size: 0.85em;">
+                                    📝 Modifica
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                <div style="font-size: 2em; margin-bottom: 10px;">📭</div>
+                <p>Nessuna partita trovata per la giornata {{ selected_round }}.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+/* Nasconde le frecce interne dei campi number */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type=number] {
+    -moz-appearance: textfield; /* Firefox */
+}
+</style>
+{% endblock %}
