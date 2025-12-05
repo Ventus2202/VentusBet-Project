@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import League, Season, Team, Match, MatchResult, TeamFormSnapshot, Prediction, DynamicFactor, OddsMovement, ModelRegistry, Player, PlayerMatchStat
+from .models import League, Season, Team, Match, MatchResult, TeamFormSnapshot, Prediction, DynamicFactor, OddsMovement, ModelRegistry, Player, PlayerMatchStat, MatchLineup, MatchAbsence, PlayerAttributes
 
 @admin.register(Player)
 class PlayerAdmin(admin.ModelAdmin):
@@ -57,3 +57,21 @@ class PredictionAdmin(admin.ModelAdmin):
 admin.site.register(DynamicFactor)
 admin.site.register(OddsMovement)
 admin.site.register(ModelRegistry)
+
+@admin.register(MatchLineup)
+class MatchLineupAdmin(admin.ModelAdmin):
+    list_display = ('match', 'team', 'status', 'formation', 'last_updated')
+    list_filter = ('status', 'formation')
+    search_fields = ('match__home_team__name', 'match__away_team__name', 'team__name')
+
+@admin.register(MatchAbsence)
+class MatchAbsenceAdmin(admin.ModelAdmin):
+    list_display = ('player', 'team', 'match', 'type', 'reason')
+    list_filter = ('type', 'team')
+    search_fields = ('player__name', 'team__name', 'match__home_team__name')
+
+@admin.register(PlayerAttributes)
+class PlayerAttributesAdmin(admin.ModelAdmin):
+    list_display = ('player', 'tactical_role', 'pace', 'shooting', 'passing', 'dribbling', 'defending', 'physicality')
+    list_filter = ('tactical_role',)
+    search_fields = ('player__name',)

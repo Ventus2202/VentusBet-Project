@@ -1,8 +1,8 @@
 import statistics
 from django.core.management.base import BaseCommand
 from predictors.models import Match, TeamFormSnapshot, PlayerMatchStat
-from predictors.utils import calculate_advanced_metrics, calculate_starters_xg_avg
-from django.db.models import Q, Count, Avg
+from predictors.features import get_team_features_at_date
+from django.db.models import Count
 
 class Command(BaseCommand):
     help = 'Calcola features avanzate (xG, Goal, Forma WDL) per l\'IA'
@@ -45,71 +45,48 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"Fatto! Aggiornati {count} match con dati avanzati e sequenza forma."))
 
-    def calculate_player_metrics(self, match, team):
-        """
-        Calcola la media delle prestazioni recenti degli 11 titolari (REALI).
-        """
-        # 1. Trova i titolari per questa partita
-        starters = PlayerMatchStat.objects.filter(
-            match=match,
-            team=team,
-            is_starter=True
-        ).values_list('player_id', flat=True)
-
-        if not starters:
-            return {'starters_xg': 0.0}
-
-        # 2. Usa la funzione centralizzata
-        team_avg = calculate_starters_xg_avg(list(starters), match.date_time)
-
-        return {'starters_xg': team_avg}
-
     def calculate_snapshot(self, current_match, team, match_home_team, match_away_team):
-        # Prendiamo le ultime 5 partite giocate PRIMA di questa
-        # Ottimizzazione: usiamo select_related per evitare N+1 sui risultati delle partite passate
-        past_matches = Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            date_time__lt=current_match.date_time,
+        # Use the centralized feature calculation logic
+        # IMPORTANT: We use 'use_actual_starters=True' because this is historical data
+        # and we want to train on the ACTUAL team that played, not a prediction.
+        
+        feats = get_team_features_at_date(
+            team=team,
+            date_limit=current_match.date_time,
             season=current_match.season,
-            status='FINISHED'
-        ).select_related('result').order_by('-date_time')
+            current_match_home_team=match_home_team,
+            current_match_away_team=match_away_team,
+            use_actual_starters=True,
+            current_match=current_match
+        )
 
-        # 1. Calcolo Giorni Riposo
-        rest_days = 7
-        if past_matches.exists():
-            delta = current_match.date_time - past_matches.first().date_time
-            rest_days = delta.days
-
-        # 2. Calcolo Metriche tramite Utils
-        last_5 = list(past_matches[:5])
-        metrics = calculate_advanced_metrics(last_5, team, match_home_team, match_away_team)
-
-        # 3. Calcolo Metriche Giocatori
-        player_metrics = self.calculate_player_metrics(current_match, team)
+        if not feats:
+            return
 
         # 4. Salvataggio
         snapshot, created = TeamFormSnapshot.objects.update_or_create(
             match=current_match,
             team=team,
             defaults={
-                'last_5_matches_points': metrics['points'],
-                'rest_days': rest_days,
-                'avg_xg_last_5': metrics['avg_xg'],
-                'avg_goals_scored_last_5': metrics['avg_gf'],
-                'avg_goals_conceded_last_5': metrics['avg_ga'],
-                'form_sequence': metrics['form_sequence'],
+                'last_5_matches_points': feats['points'],
+                'rest_days': feats['rest_days'],
+                'elo_rating': feats['elo'],
+                'avg_xg_last_5': feats['avg_xg'],
+                'avg_goals_scored_last_5': feats['avg_gf'],
+                'avg_goals_conceded_last_5': feats['avg_ga'],
+                'form_sequence': feats.get('form_sequence', ''), # This might need to be added to features.py return dict if missing
                 
                 # Nuovi campi Step 1
-                'xg_ratio_last_5': metrics['xg_ratio'],
-                'efficiency_attack_last_5': metrics['eff_att'],
-                'efficiency_defense_last_5': metrics['eff_def'],
-                'goal_volatility_last_5': metrics['volatility'],
+                'xg_ratio_last_5': feats['xg_ratio'],
+                'efficiency_attack_last_5': feats['eff_att'],
+                'efficiency_defense_last_5': feats['eff_def'],
+                'goal_volatility_last_5': feats['volatility'],
 
                 # Nuovi campi Step 2 (Fattori Psicologici)
-                'is_derby': metrics['is_derby'],
-                'pressure_index': metrics['pressure_index'],
+                'is_derby': feats['is_derby'],
+                'pressure_index': feats['pressure_index'],
 
                 # Nuovi campi Step 3 (Giocatori)
-                'starters_avg_xg_last_5': player_metrics['starters_xg']
+                'starters_avg_xg_last_5': feats['starters_xg']
             }
         )

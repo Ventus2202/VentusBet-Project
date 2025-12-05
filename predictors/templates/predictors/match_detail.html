@@ -83,6 +83,23 @@
                 </div>
             </div>
 
+            {% if match.referee %}
+            <div class="insight-row">
+                <div class="insight-label">
+                    <strong>Arbitro</strong>
+                    <div style="font-size: 0.8em; color: #888;">{{ match.referee.matches_count }} partite dirette</div>
+                </div>
+                <div class="insight-value" style="text-align: right;">
+                    <div style="font-weight: bold;">{{ match.referee.name }}</div>
+                    {% if match.referee.yellow_cards_avg > 0 %}
+                        <div style="font-size: 0.8em; color: #dc3545;">
+                            Media Gialli: {{ match.referee.yellow_cards_avg|floatformat:1 }}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
             <div class="insight-row">
                 <div class="insight-label">
                     <strong>Pressione Classifica (Home)</strong>
@@ -245,13 +262,54 @@
     </div>
     {% endif %}
 
-    <!-- 4. LINEUPS -->
+    <!-- 4. TACTICAL ANALYSIS (NEW) -->
+    {% if tactical_report %}
+    <div class="card">
+        <h3>Analisi Tattica & Qualità Rosa</h3>
+        
+        <div class="insight-row">
+            <div class="insight-label">
+                <strong>Indice Qualità Titolari</strong>
+                <div style="font-size: 0.8em; color: #888;">Basato su attributi fisici/tecnici (0-100)</div>
+            </div>
+            
+            <div style="width: 100%;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span style="color: var(--primary-color); font-weight: bold;">{{ tactical_report.home_quality_index }}</span>
+                    <span style="color: var(--accent-color); font-weight: bold;">{{ tactical_report.away_quality_index }}</span>
+                </div>
+                <!-- Double bar -->
+                <div style="display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #eee;">
+                    <div style="background: var(--primary-color); width: {% widthratio tactical_report.home_quality_index tactical_report.home_quality_index|add:tactical_report.away_quality_index 100 %}%;"></div>
+                    <div style="background: var(--accent-color); flex-grow: 1;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="insight-row" style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+            <div class="insight-label">
+                <strong>Vantaggio Modulo</strong>
+            </div>
+            <div class="insight-value">
+                {% if tactical_report.tactical_advantage > 0 %}
+                    <span style="color: var(--primary-color); font-weight: bold;">Vantaggio Casa ({{ home_module }})</span>
+                {% elif tactical_report.tactical_advantage < 0 %}
+                    <span style="color: var(--accent-color); font-weight: bold;">Vantaggio Ospite ({{ away_module }})</span>
+                {% else %}
+                    <span style="color: #777;">Neutrale</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 5. LINEUPS -->
     <div class="card">
         <h3>
             {% if is_probable_lineup %}
                 Formazioni Probabili (Stimate) <span style="font-size: 0.6em; color: #888; font-weight: normal;">Basate sul minutaggio recente</span>
             {% else %}
-                Formazioni & Statistiche Individuali
+                Formazioni Confermate
             {% endif %}
         </h3>
         
@@ -262,7 +320,7 @@
                 <div>
                     <h4 style="color: var(--primary-color); border-bottom: 2px solid var(--primary-color); padding-bottom: 5px;">
                         {{ match.home_team.name }}
-                        {% if is_probable_lineup and home_module %}
+                        {% if home_module %}
                             <span style="float: right; font-size: 0.8em; background: #eee; padding: 2px 6px; border-radius: 4px; color: #555;">
                                 {{ home_module }}
                             </span>
@@ -273,10 +331,6 @@
                             <tr style="text-align: left; border-bottom: 1px solid #ddd;">
                                 <th style="padding: 5px;">Pos</th>
                                 <th style="padding: 5px;">Giocatore</th>
-                                {% if not is_probable_lineup %}
-                                <th style="padding: 5px;">Min</th>
-                                <th style="padding: 5px;">Perf</th>
-                                {% endif %}
                             </tr>
                         </thead>
                         <tbody>
@@ -284,37 +338,32 @@
                             <tr style="border-bottom: 1px solid #eee; {% if not p.is_starter %}background: #f9f9f9; color: #777;{% endif %}">
                                 <td style="padding: 5px; font-weight: bold;">{{ p.position|default:"?" }}</td>
                                 <td style="padding: 5px;">{{ p.player.name }}</td>
-                                {% if not is_probable_lineup %}
-                                <td style="padding: 5px;">
-                                    {% if p.minutes == 'Avg' %}
-                                        <span style="font-style: italic; color: #999;">Stima</span>
-                                    {% else %}
-                                        {{ p.minutes }}'
-                                    {% endif %}
-                                </td>
-                                <td style="padding: 5px;">
-                                    {% if not is_probable_lineup %}
-                                        {% if p.goals > 0 %}⚽ {{ p.goals }} {% endif %}
-                                        {% if p.assists > 0 %}🅰️ {{ p.assists }} {% endif %}
-                                        <span title="xG: {{ p.xg }} | xA: {{ p.xa }}" style="cursor: help; border-bottom: 1px dotted #999;">
-                                            {{ p.xg|floatformat:2 }} xG
-                                        </span>
-                                    {% else %}
-                                        -
-                                    {% endif %}
-                                </td>
-                                {% endif %}
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
+                    
+                    <!-- HOME ABSENCES -->
+                    {% if home_absences %}
+                    <div style="margin-top: 15px; font-size: 0.8em;">
+                        <strong style="color: #dc3545;">Indisponibili:</strong>
+                        <ul style="padding-left: 20px; margin: 5px 0; color: #666;">
+                            {% for abs in home_absences %}
+                            <li>
+                                <strong>{{ abs.player.name }}</strong> 
+                                <span style="font-style: italic;">({{ abs.reason }})</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <!-- AWAY LINEUP -->
                 <div>
                     <h4 style="color: var(--accent-color); border-bottom: 2px solid var(--accent-color); padding-bottom: 5px;">
                         {{ match.away_team.name }}
-                        {% if is_probable_lineup and away_module %}
+                        {% if away_module %}
                             <span style="float: right; font-size: 0.8em; background: #eee; padding: 2px 6px; border-radius: 4px; color: #555;">
                                 {{ away_module }}
                             </span>
@@ -325,10 +374,6 @@
                             <tr style="text-align: left; border-bottom: 1px solid #ddd;">
                                 <th style="padding: 5px;">Pos</th>
                                 <th style="padding: 5px;">Giocatore</th>
-                                {% if not is_probable_lineup %}
-                                <th style="padding: 5px;">Min</th>
-                                <th style="padding: 5px;">Perf</th>
-                                {% endif %}
                             </tr>
                         </thead>
                         <tbody>
@@ -336,30 +381,25 @@
                             <tr style="border-bottom: 1px solid #eee; {% if not p.is_starter %}background: #f9f9f9; color: #777;{% endif %}">
                                 <td style="padding: 5px; font-weight: bold;">{{ p.position|default:"?" }}</td>
                                 <td style="padding: 5px;">{{ p.player.name }}</td>
-                                {% if not is_probable_lineup %}
-                                <td style="padding: 5px;">
-                                    {% if p.minutes == 'Avg' %}
-                                        <span style="font-style: italic; color: #999;">Stima</span>
-                                    {% else %}
-                                        {{ p.minutes }}'
-                                    {% endif %}
-                                </td>
-                                <td style="padding: 5px;">
-                                    {% if not is_probable_lineup %}
-                                        {% if p.goals > 0 %}⚽ {{ p.goals }} {% endif %}
-                                        {% if p.assists > 0 %}🅰️ {{ p.assists }} {% endif %}
-                                        <span title="xG: {{ p.xg }} | xA: {{ p.xa }}" style="cursor: help; border-bottom: 1px dotted #999;">
-                                            {{ p.xg|floatformat:2 }} xG
-                                        </span>
-                                    {% else %}
-                                        -
-                                    {% endif %}
-                                </td>
-                                {% endif %}
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
+
+                    <!-- AWAY ABSENCES -->
+                    {% if away_absences %}
+                    <div style="margin-top: 15px; font-size: 0.8em;">
+                        <strong style="color: #dc3545;">Indisponibili:</strong>
+                        <ul style="padding-left: 20px; margin: 5px 0; color: #666;">
+                            {% for abs in away_absences %}
+                            <li>
+                                <strong>{{ abs.player.name }}</strong> 
+                                <span style="font-style: italic;">({{ abs.reason }})</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         {% else %}
@@ -371,6 +411,29 @@
             </div>
         {% endif %}
     </div>
+
+    <!-- 5. TOP 3 CONSIGLI (Bottom) -->
+    {% if top_bets %}
+    <div class="card" style="margin-top: 20px; border-left: 5px solid var(--accent-color);">
+        <h3 style="color: var(--accent-color);">🏆 Le Nostre Top Picks</h3>
+        <p style="font-size: 0.9em; color: #777;">Le scommesse più promettenti, filtrate con l'accuratezza storica del modello.</p>
+        <ul style="list-style: none; padding: 0;">
+            {% for bet in top_bets %}
+            <li style="background: #f9f9f9; margin-bottom: 10px; padding: 15px; border-radius: 8px; display: flex; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+                <span style="font-size: 1.2em; font-weight: bold; color: var(--text-color); margin-right: 15px; flex-shrink: 0;">
+                    {{ bet.label }}
+                </span>
+                <span style="font-size: 0.9em; color: #555; flex-grow: 1;">
+                    {{ bet.reasoning }}
+                </span>
+                <span style="font-size: 1.1em; font-weight: bold; color: {% if bet.score >= 80 %}#28a745{% elif bet.score >= 60 %}#ffc107{% else %}#dc3545{% endif %}; margin-left: 15px; flex-shrink: 0;">
+                    {{ bet.score|floatformat:0 }}
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
 
 </div>
 {% endblock %}

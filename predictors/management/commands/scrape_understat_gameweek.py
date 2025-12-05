@@ -267,14 +267,27 @@ class Command(BaseCommand):
                     # Helper to process a team dict
                     def process_roster(roster_dict, team_obj):
                         for p_id, p_data in roster_dict.items():
-                            # 1. Ensure Player Exists (Add only if missing)
-                            player, _ = Player.objects.get_or_create(
-                                understat_id=str(p_data.get('id')),
-                                defaults={
-                                    'name': p_data.get('player'),
-                                    'current_team': team_obj # Update team to current match team
-                                }
-                            )
+                            u_id = str(p_data.get('id'))
+                            p_name = p_data.get('player')
+                            
+                            # 1. Try finding by unique Understat ID
+                            player = Player.objects.filter(understat_id=u_id).first()
+                            
+                            # 2. Fallback: Try finding by Name + Team (to prevent dups if ID changed or wasn't saved)
+                            if not player:
+                                player = Player.objects.filter(name=p_name, current_team=team_obj).first()
+                                if player:
+                                    # Found by name! Update ID to link it for future
+                                    player.understat_id = u_id
+                                    player.save()
+                            
+                            # 3. Create if still not found
+                            if not player:
+                                player = Player.objects.create(
+                                    understat_id=u_id,
+                                    name=p_name,
+                                    current_team=team_obj
+                                )
                             
                             # 2. Save Match Stats (Add only if missing)
                             # 'position' usually 'Sub' if sub, else actual position like 'DC', 'MC'

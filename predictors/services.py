@@ -49,15 +49,16 @@ class DashboardService:
         team_ids = {m.home_team_id for m in upcoming_matches} | {m.away_team_id for m in upcoming_matches}
         latest_forms = {}
         if team_ids:
+            # FIX: Filter out empty sequences to avoid future "ghost" snapshots
             recent_snaps = TeamFormSnapshot.objects.filter(
-                team_id__in=team_ids,
-                match__status='FINISHED' # FIX: Only take form from finished matches
-            ).order_by('team_id', '-match__date_time')
+                team_id__in=team_ids
+            ).exclude(form_sequence="").order_by('team_id', '-match__date_time')
             
             # Prendiamo solo il primo per ogni team (simulato via Python per semplicità DB)
             seen_teams = set()
             for snap in recent_snaps:
                 if snap.team_id not in seen_teams:
+                    # REVERSE STRING: DB stores "Newest->Oldest", we want "Oldest->Newest" for display (Left->Right)
                     latest_forms[snap.team_id] = snap.form_sequence
                     seen_teams.add(snap.team_id)
 

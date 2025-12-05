@@ -1,48 +1,80 @@
 {% extends 'predictors/base.html' %}
 
 {% block content %}
-<div class="card">
-    <h2>🏆 Classifica Serie A</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
     
-    <table>
-        <thead>
-            <tr>
-                <th>POS</th>
-                <th style="text-align: left;">SQUADRA</th>
-                <th>PT</th>
-                <th>G</th>
-                <th>V</th>
-                <th>N</th>
-                <th>P</th>
-                <th>DR</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in table %}
-            <tr>
-                <td data-label="POS" style="font-weight: bold; 
-                    {% if row.position <= 4 %}color: #0151c4;{% elif row.position <= 6 %}color: #d97706;{% elif row.position >= 18 %}color: #dc2626;{% endif %}">
-                    {{ row.position }}
-                </td>
-                
-                <td data-label="Squadra">
-                    <a href="{% url 'team_detail' row.id %}" style="text-decoration: none; color: inherit; font-weight: bold; display: flex; align-items: center; gap: 10px;">
-                        {% if row.logo %}
-                            <img src="{{ row.logo.url }}" style="height: 30px; width: 30px; object-fit: contain;">
-                        {% endif %}
-                        {{ row.name }}
-                    </a>
-                </td>
-                
-                <td data-label="PT" style="font-weight: bold; font-size: 1.1em; color: var(--primary-color);">{{ row.points }}</td>
-                <td data-label="G">{{ row.played }}</td>
-                <td data-label="V">{{ row.won }}</td>
-                <td data-label="N">{{ row.drawn }}</td>
-                <td data-label="P">{{ row.lost }}</td>
-                <td data-label="DR">{{ row.gd }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <!-- CLASSIFICA SQUADRE -->
+    <div class="card" style="flex: 2; min-width: 300px;">
+        <h2>🏆 Classifica Serie A</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>POS</th>
+                    <th style="text-align: left;">SQUADRA</th>
+                    <th>PT</th>
+                    <th>G</th>
+                    <th>V</th>
+                    <th>N</th>
+                    <th>P</th>
+                    <th>DR</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table %}
+                <tr>
+                    <td data-label="POS" style="font-weight: bold; 
+                        {% if row.position <= 4 %}color: #0151c4;{% elif row.position <= 6 %}color: #d97706;{% elif row.position >= 18 %}color: #dc2626;{% endif %}">
+                        {{ row.position }}
+                    </td>
+                    
+                    <td data-label="Squadra">
+                        <a href="{% url 'team_detail' row.id %}" style="text-decoration: none; color: inherit; font-weight: bold; display: flex; align-items: center; gap: 10px;">
+                            {% if row.logo %}
+                                <img src="{{ row.logo.url }}" style="height: 30px; width: 30px; object-fit: contain;">
+                            {% endif %}
+                            {{ row.name }}
+                        </a>
+                    </td>
+                    
+                    <td data-label="PT" style="font-weight: bold; font-size: 1.1em; color: var(--primary-color);">{{ row.points }}</td>
+                    <td data-label="G">{{ row.played }}</td>
+                    <td data-label="V">{{ row.won }}</td>
+                    <td data-label="N">{{ row.drawn }}</td>
+                    <td data-label="P">{{ row.lost }}</td>
+                    <td data-label="DR">{{ row.gd }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- CLASSIFICA MARCATORI -->
+    {% if scorers %}
+    <div class="card" style="flex: 1; min-width: 280px;">
+        <h2>⚽ Marcatori</h2>
+        <table style="font-size: 0.9em;">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th style="text-align: left;">Giocatore</th>
+                    <th>Goal</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in scorers %}
+                <tr>
+                    <td style="font-weight: bold; color: #777;">{{ s.rank }}</td>
+                    <td style="text-align: left;">
+                        <div style="font-weight: bold;">{{ s.player.name }}</div>
+                        <div style="font-size: 0.85em; color: #888;">{{ s.team.name }}</div>
+                    </td>
+                    <td style="font-weight: bold; font-size: 1.1em; color: var(--accent-color);">{{ s.goals }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
 </div>
 {% endblock %}

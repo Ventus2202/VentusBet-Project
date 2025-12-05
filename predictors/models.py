@@ -36,6 +36,7 @@ class Team(models.Model):
     
     name = models.CharField(max_length=100, verbose_name="Nome Squadra")
     short_name = models.CharField(max_length=10, blank=True, null=True, verbose_name="Sigla")
+    api_name = models.CharField(max_length=100, blank=True, null=True, verbose_name="Nome API (TheOdds)", help_text="Nome usato da TheOddsAPI per il mapping")
     stadium_name = models.CharField(max_length=100, blank=True, null=True)
     stadium_capacity = models.IntegerField(blank=True, null=True)
     pitch_type = models.CharField(max_length=20, choices=PITCH_CHOICES, default='GRASS', verbose_name="Tipo Campo")
@@ -99,6 +100,48 @@ class Rivalry(models.Model):
         unique_together = ('team1', 'team2')
 
 
+class Referee(models.Model):
+    name = models.CharField(max_length=100, unique=True, verbose_name="Nome Arbitro")
+    matches_count = models.IntegerField(default=0, verbose_name="Partite Arbitrate")
+    
+    # Statistiche Storiche
+    yellow_cards_avg = models.FloatField(default=0.0, verbose_name="Media Gialli")
+    red_cards_avg = models.FloatField(default=0.0, verbose_name="Media Rossi")
+    
+    last_updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} (Avg YC: {self.yellow_cards_avg})"
+
+    class Meta:
+        verbose_name = "Arbitro"
+        verbose_name_plural = "Arbitri"
+
+
+class TopScorer(models.Model):
+    """
+    Classifica Marcatori della stagione.
+    """
+    season = models.ForeignKey(Season, on_delete=models.CASCADE)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
+    team = models.ForeignKey(Team, on_delete=models.CASCADE)
+    
+    goals = models.IntegerField(default=0)
+    assists = models.IntegerField(default=0, null=True, blank=True)
+    penalties = models.IntegerField(default=0, null=True, blank=True)
+    
+    rank = models.IntegerField(default=999)
+
+    class Meta:
+        unique_together = ('season', 'player')
+        verbose_name = "Capocannoniere"
+        verbose_name_plural = "Capocannonieri"
+        ordering = ['rank', '-goals']
+
+    def __str__(self):
+        return f"{self.rank}. {self.player.name} ({self.goals})"
+
+
 # ==========================================
 # 2. MODULO EVENTI (Cuore)
 # ==========================================
@@ -117,6 +160,9 @@ class Match(models.Model):
     date_time = models.DateTimeField(verbose_name="Data e Ora")
     round_number = models.IntegerField(verbose_name="Giornata", help_text="Utile per calcolare stanchezza stagionale")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='SCHEDULED')
+    
+    # Nuovo campo Arbitro
+    referee = models.ForeignKey(Referee, on_delete=models.SET_NULL, null=True, blank=True, related_name='matches', verbose_name="Arbitro")
 
     def __str__(self):
         return f"{self.home_team} vs {self.away_team} ({self.date_time.date()})"
@@ -192,6 +238,100 @@ class PlayerMatchStat(models.Model):
         unique_together = ('player', 'match')
 
 
+class MatchLineup(models.Model):
+    """
+    Memorizza la formazione (Probabile o Ufficiale) per un match PRIMA che inizi.
+    Fondamentale per il Tactical Engine.
+    """
+    LINEUP_TYPE_CHOICES = [
+        ('PROBABLE', 'Probabile'),
+        ('OFFICIAL', 'Ufficiale')
+    ]
+    
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='lineups')
+    team = models.ForeignKey(Team, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=LINEUP_TYPE_CHOICES, default='PROBABLE')
+    
+    # Modulo (es. "4-3-3")
+    formation = models.CharField(max_length=10, default="4-4-2")
+    
+    # Lista ordinata dei titolari (JSON list of Player IDs or Names if not mapped)
+    # Esempio: [101, 104, 202, ...] (ID dei Player model)
+    starting_xi = models.JSONField(default=list, verbose_name="Titolari (IDs)")
+    
+    # Lista della panchina
+    bench = models.JSONField(default=list, blank=True, verbose_name="Panchina (IDs)")
+    
+    # Metadati per capire se è aggiornata
+    source = models.CharField(max_length=50, blank=True, help_text="Fonte (es. Football-Data, Sky, Algoritmo)")
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('match', 'team')
+        verbose_name = "Formazione Pre-Match"
+        verbose_name_plural = "Formazioni Pre-Match"
+
+    def __str__(self):
+        return f"{self.team} ({self.status}) per {self.match}"
+
+
+class MatchAbsence(models.Model):
+    """
+    Giocatori indisponibili per una specifica partita (Infortunati, Squalificati).
+    """
+    ABSENCE_TYPES = [
+        ('INJURY', 'Infortunio'),
+        ('SUSPENSION', 'Squalifica'),
+        ('OTHER', 'Altro')
+    ]
+    
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='absences')
+    team = models.ForeignKey(Team, on_delete=models.CASCADE)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE)
+    type = models.CharField(max_length=20, choices=ABSENCE_TYPES, default='INJURY')
+    reason = models.CharField(max_length=100, blank=True, verbose_name="Dettaglio (es. Lesione muscolare)")
+    
+    def __str__(self):
+        return f"{self.player.name} ({self.get_type_display()}) - {self.match}"
+
+    class Meta:
+        verbose_name = "Assenza Match"
+        verbose_name_plural = "Assenze Match"
+        unique_together = ('match', 'player')
+
+
+class PlayerAttributes(models.Model):
+    """
+    Attributi statici o semi-statici del giocatore per il calcolo dei Mismatch.
+    Aggiornati periodicamente.
+    """
+    player = models.OneToOneField(Player, on_delete=models.CASCADE, related_name='attributes')
+    
+    # Fisici
+    pace = models.IntegerField(default=50, verbose_name="Velocità")
+    physicality = models.IntegerField(default=50, verbose_name="Fisicità")
+    stamina = models.IntegerField(default=50, verbose_name="Resistenza")
+    
+    # Tecnici
+    shooting = models.IntegerField(default=50, verbose_name="Tiro")
+    passing = models.IntegerField(default=50, verbose_name="Passaggio")
+    dribbling = models.IntegerField(default=50, verbose_name="Dribbling")
+    defending = models.IntegerField(default=50, verbose_name="Difesa")
+    
+    # Mentali
+    experience = models.IntegerField(default=50, verbose_name="Esperienza")
+    positioning = models.IntegerField(default=50, verbose_name="Posizionamento")
+    
+    # Ruolo Tattico Specifico (più dettagliato di primary_position)
+    # Es: 'Wing Back', 'Box-to-Box', 'Target Man'
+    tactical_role = models.CharField(max_length=50, blank=True, verbose_name="Ruolo Tattico")
+    
+    last_updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Attr: {self.player.name}"
+
+
 # ==========================================
 # 3. MODULO FATTORI (Input ML)
 # ==========================================
@@ -234,16 +374,17 @@ class TeamFormSnapshot(models.Model):
 class OddsMovement(models.Model):
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='odds')
     bookmaker = models.CharField(max_length=50)
+    provider = models.CharField(max_length=50, default='Manual', help_text="Fonte dati (es. TheOddsAPI)")
     
     # Quote Apertura
-    opening_1 = models.FloatField()
-    opening_X = models.FloatField()
-    opening_2 = models.FloatField()
+    opening_1 = models.FloatField(null=True, blank=True)
+    opening_X = models.FloatField(null=True, blank=True)
+    opening_2 = models.FloatField(null=True, blank=True)
     
-    # Quote Chiusura (Pre-match)
-    closing_1 = models.FloatField()
-    closing_X = models.FloatField()
-    closing_2 = models.FloatField()
+    # Quote Chiusura (Pre-match) o Live
+    closing_1 = models.FloatField(null=True, blank=True)
+    closing_X = models.FloatField(null=True, blank=True)
+    closing_2 = models.FloatField(null=True, blank=True)
     
     last_updated = models.DateTimeField(auto_now=True)
 
@@ -269,6 +410,44 @@ class DynamicFactor(models.Model):
 # ==========================================
 # 4. MODULO INTELLIGENZA (Output ML)
 # ==========================================
+
+class AccuracyProfile(models.Model):
+    """
+    Memorizza la precisione storica del modello per ogni tipo di mercato.
+    Es: Goal -> Over -> 78.5%
+    """
+    STAT_CHOICES = [
+        ('Goal', 'Goal'),
+        ('Shots', 'Tiri Totali'),
+        ('ShotsOT', 'Tiri in Porta'),
+        ('Corners', 'Corner'),
+        ('Cards', 'Cartellini'),
+        ('Fouls', 'Falli'),
+        ('Offsides', 'Fuorigioco'),
+        ('1X2', 'Esito Finale')
+    ]
+    
+    MARKET_CHOICES = [
+        ('OVER', 'Over / Casa'), # Usiamo OVER anche per indicare vantaggio Casa nelle stats
+        ('UNDER', 'Under / Ospite'), # Usiamo UNDER anche per indicare vantaggio Ospite
+        ('1', 'Vittoria Casa (1X2)'),
+        ('X', 'Pareggio (1X2)'),
+        ('2', 'Vittoria Ospite (1X2)'),
+    ]
+
+    stat_type = models.CharField(max_length=20, choices=STAT_CHOICES)
+    market_type = models.CharField(max_length=10, choices=MARKET_CHOICES)
+    accuracy = models.FloatField(default=50.0, help_text="Percentuale di successo storica (0-100)")
+    sample_size = models.IntegerField(default=0, help_text="Numero di match analizzati")
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('stat_type', 'market_type')
+        verbose_name = "Profilo Accuratezza"
+        verbose_name_plural = "Profili Accuratezza"
+
+    def __str__(self):
+        return f"{self.stat_type} - {self.market_type}: {self.accuracy:.1f}% ({self.sample_size} match)"
 
 class BettingConfiguration(models.Model):
     """

@@ -1,26 +1,22 @@
 import pandas as pd
-import joblib
 import os
-from datetime import timedelta
 from django.conf import settings
 from django.core.management.base import BaseCommand
-from django.utils import timezone
-from django.db.models import Q
-from predictors.models import Match, Prediction, TeamFormSnapshot, PlayerMatchStat
-from predictors.utils import calculate_advanced_metrics, get_probable_starters, calculate_starters_xg_avg
+from predictors.models import Match, Prediction, TeamFormSnapshot
+from predictors.features import get_team_features_at_date
+from predictors.apps import PredictorsConfig # Import the AppConfig
 
 class Command(BaseCommand):
     help = 'Genera previsioni statistiche complete per le partite programmate'
 
     def handle(self, *args, **kwargs):
-        # 1. CARICAMENTO MODELLI
-        model_path = os.path.join(settings.BASE_DIR, 'ml_stats_models.pkl')
-        if not os.path.exists(model_path):
-            self.stdout.write(self.style.ERROR("Modello non trovato! Esegui 'train_model' prima."))
+        # 1. CARICAMENTO MODELLI (Ora da AppConfig)
+        models_dict = PredictorsConfig.ml_models
+        if models_dict is None:
+            self.stdout.write(self.style.ERROR("Modelli ML non caricati in memoria! Verificare il file ml_stats_models.pkl e il ready() dell'AppConfig."))
             return
 
-        models_dict = joblib.load(model_path)
-        self.stdout.write(f"Caricati {len(models_dict)} modelli statistici.")
+        self.stdout.write(f"Caricati {len(models_dict)} modelli statistici dalla memoria.")
 
         # 2. RECUPERO PARTITE PROGRAMMATE (SOLO PROSSIMA GIORNATA)
         # Trova la prima partita non ancora giocata per identificare la prossima giornata
@@ -49,12 +45,19 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"Saltata {match}: dati storici insufficienti."))
                 continue
             
-            # Preparazione DataFrame (1 riga)
-            X_input = pd.DataFrame([features_row])
-            
             # 4. SALVATAGGIO SNAPSHOTS (Per Visualizzazione UI)
             # Estrarre i dati dal dizionario calcolato per salvarli nel DB
             self.save_snapshots(match, features_row)
+
+            # Create a clean copy for ML input (remove non-numerical form strings)
+            ml_input_row = features_row.copy()
+            if 'home_form_sequence' in ml_input_row:
+                del ml_input_row['home_form_sequence']
+            if 'away_form_sequence' in ml_input_row:
+                del ml_input_row['away_form_sequence']
+
+            # Preparazione DataFrame (1 riga)
+            X_input = pd.DataFrame([ml_input_row])
 
             # 5. PREDIZIONE PER OGNI TARGET
             preds = {}
@@ -123,7 +126,8 @@ class Command(BaseCommand):
                 
                 'is_derby': feats['home_is_derby'],
                 'pressure_index': feats['home_pressure_index'],
-                'starters_avg_xg_last_5': feats['home_starters_xg']
+                'starters_avg_xg_last_5': feats['home_starters_xg'],
+                'form_sequence': feats.get('home_form_sequence', '')
             }
         )
 
@@ -146,19 +150,35 @@ class Command(BaseCommand):
                 
                 'is_derby': feats['away_is_derby'],
                 'pressure_index': feats['away_pressure_index'],
-                'starters_avg_xg_last_5': feats['away_starters_xg']
+                'starters_avg_xg_last_5': feats['away_starters_xg'],
+                'form_sequence': feats.get('away_form_sequence', '')
             }
         )
 
     def get_pre_match_features(self, match):
         """
-        Calcola le metriche 'live' basandosi sullo storico fino a ieri.
+        Calcola le metriche 'live' usando il nuovo modulo unificato.
         """
         row = {}
         
-        # Recupera dati per Casa e Ospite
-        stats_home = self._analyze_team_history(match.home_team, match.date_time, match.season, match.home_team, match.away_team)
-        stats_away = self._analyze_team_history(match.away_team, match.date_time, match.season, match.home_team, match.away_team)
+        # Recupera dati per Casa e Ospite tramite FEATURES.PY
+        stats_home = get_team_features_at_date(
+            team=match.home_team,
+            date_limit=match.date_time,
+            season=match.season,
+            current_match_home_team=match.home_team,
+            current_match_away_team=match.away_team,
+            use_actual_starters=False # PREDICTION MODE -> Probable Starters
+        )
+        
+        stats_away = get_team_features_at_date(
+            team=match.away_team,
+            date_limit=match.date_time,
+            season=match.season,
+            current_match_home_team=match.home_team,
+            current_match_away_team=match.away_team,
+            use_actual_starters=False
+        )
         
         if not stats_home or not stats_away:
             return None
@@ -184,6 +204,7 @@ class Command(BaseCommand):
         row['home_is_derby'] = stats_home['is_derby']
         row['home_pressure_index'] = stats_home['pressure_index']
         row['home_starters_xg'] = stats_home['starters_xg']
+        row['home_form_sequence'] = stats_home.get('form_sequence', '')
 
         row['away_last_5_pts'] = stats_away['points']
         row['away_rest_days'] = stats_away['rest_days']
@@ -200,184 +221,6 @@ class Command(BaseCommand):
         row['away_is_derby'] = stats_away['is_derby']
         row['away_pressure_index'] = stats_away['pressure_index']
         row['away_starters_xg'] = stats_away['starters_xg']
+        row['away_form_sequence'] = stats_away.get('form_sequence', '')
 
         return row
-
-    def _analyze_team_history(self, team, date_limit, season, current_match_home_team=None, current_match_away_team=None):
-        """
-        SMART ANALYSIS: Calcola medie ponderate in base al fattore Casa/Trasferta.
-        Se la squadra gioca in Casa, le partite casalinghe passate pesano di più.
-        """
-        # Recupera le ultime 10 partite (aumentiamo il campione per avere dati su casa/trasferta)
-        past_matches = Match.objects.filter(
-            Q(home_team=team) | Q(away_team=team),
-            date_time__lt=date_limit,
-            season=season,
-            status='FINISHED'
-        ).order_by('-date_time')[:10] # Prendiamo 10 per avere profondità
-
-        # Default se non ci sono partite
-        if not past_matches.exists():
-            return {
-                'points': 5, 'rest_days': 7, 'elo': 1500.0,
-                'avg_xg': 1.0, 'avg_gf': 1.0, 'avg_ga': 1.0,
-                'xg_ratio': 0.5, 'eff_att': 0.0, 'eff_def': 0.0, 'volatility': 0.0,
-                'is_derby': False, 'pressure_index': 50.0,
-                'starters_xg': 0.0
-            }
-        
-        # --- NEW: PLAYER METRICS CALCULATION (Probable Lineup Estimation) ---
-        # Use the SMART ESTIMATION (Top minutes in last 3 games) instead of just last match
-        probable_starters_ids = get_probable_starters(team, date_limit)
-        starters_xg_avg = calculate_starters_xg_avg(probable_starters_ids, date_limit)
-        
-        # 1. Calcolo Riposo (basato sull'ultima in assoluto)
-        last_match = past_matches[0]
-        rest_days = (date_limit - last_match.date_time).days
-        
-        # Recupera ELO
-        last_snapshot = TeamFormSnapshot.objects.filter(team=team).order_by('-match__date_time').first()
-        current_elo = last_snapshot.elo_rating if last_snapshot else 1500.0
-
-        # --- VENUE WEIGHTING LOGIC ---
-        # Determiniamo se 'team' gioca in CASA o OSPITE nel match attuale
-        is_playing_home = (team == current_match_home_team)
-        
-        weighted_matches = []
-        
-        # Selezioniamo le migliori 5 partite "pesate"
-        # Se gioca in CASA, diamo priorità alle partite in casa recenti
-        home_games = [m for m in past_matches if m.home_team == team]
-        away_games = [m for m in past_matches if m.away_team == team]
-        
-        if is_playing_home:
-            # Mix: 3 ultime in casa + 2 ultime globali (per forma recente)
-            # Usiamo un set per evitare duplicati se l'ultima globale era anche in casa
-            chosen_ids = set()
-            for m in home_games[:3]: 
-                weighted_matches.append(m)
-                chosen_ids.add(m.id)
-            
-            count = len(weighted_matches)
-            for m in past_matches: # Riempie col resto delle recenti
-                if count >= 5: break
-                if m.id not in chosen_ids:
-                    weighted_matches.append(m)
-                    count += 1
-        else:
-            # Gioca in TRASFERTA: 3 ultime fuori + 2 ultime globali
-            chosen_ids = set()
-            for m in away_games[:3]:
-                weighted_matches.append(m)
-                chosen_ids.add(m.id)
-            
-            count = len(weighted_matches)
-            for m in past_matches:
-                if count >= 5: break
-                if m.id not in chosen_ids:
-                    weighted_matches.append(m)
-                    count += 1
-        
-        # Se non abbiamo abbastanza dati specifici, ripieghiamo sulle ultime 5 globali
-        if len(weighted_matches) < 5:
-            weighted_matches = list(past_matches[:5])
-
-        # Se non abbiamo abbastanza dati specifici, ripieghiamo sulle ultime 5 globali
-        if len(weighted_matches) < 5:
-            weighted_matches = list(past_matches[:5])
-
-        # --- STRENGTH OF SCHEDULE (SoS) INTELLIGENCE ---
-        # Invece di passare i match grezzi, calcoliamo metriche pre-ponderate per la forza dell'avversario.
-        # Poiché calculate_advanced_metrics si aspetta oggetti Match, non possiamo "truccare" i dati dentro gli oggetti facilmente.
-        # Strategia: Calcoliamo le metriche base, poi applichiamo un CORRETTIVO SoS globale basato sulla media ELO degli avversari affrontati.
-        
-        metrics = calculate_advanced_metrics(weighted_matches, team, current_match_home_team, current_match_away_team)
-        
-        # 1. Calcolo ELO Medio degli avversari affrontati in questo set di partite
-        opponents_elo_sum = 0
-        valid_opponents = 0
-        
-        for m in weighted_matches:
-            opp = m.away_team if m.home_team == team else m.home_team
-            # Cerchiamo lo snapshot più recente per l'avversario per avere il suo ELO
-            opp_snap = TeamFormSnapshot.objects.filter(team=opp).order_by('-match__date_time').first()
-            if opp_snap and opp_snap.elo_rating:
-                opponents_elo_sum += opp_snap.elo_rating
-                valid_opponents += 1
-            else:
-                opponents_elo_sum += 1500.0 # Default ELO
-                valid_opponents += 1
-        
-        avg_opp_elo = opponents_elo_sum / valid_opponents if valid_opponents > 0 else 1500.0
-        
-        # 2. Calcolo Moltiplicatore di Difficoltà (SoS Factor)
-        # Se ho affrontato squadre forti (ELO 1600), i miei gol valgono di più.
-        # Base 1500. 
-        # Esempio: Avg ELO 1650 -> Diff +150 -> Factor 1.10 (Boost 10%)
-        # Esempio: Avg ELO 1350 -> Diff -150 -> Factor 0.90 (Malus 10%)
-        sos_factor = 1.0 + ((avg_opp_elo - 1500.0) / 1500.0) 
-        
-        # Applichiamo il SoS Factor alle metriche di volume (Goal, xG)
-        # Non applichiamo a metriche di ratio (efficienza) perché sono già relative.
-        avg_gf_sos = metrics['avg_gf'] * sos_factor
-        avg_xg_sos = metrics['avg_xg'] * sos_factor
-        
-        # Per i goal subiti, la logica è inversa: 
-        # Se ho subito pochi gol da squadre forti, sono fortissimo.
-        # Se ho subito gol da squadre deboli, sono scarso.
-        # Quindi: Se Avversari Forti (Factor > 1), i Goal Subiti dovrebbero "pesare meno" (essere ridotti) per mostrare una difesa migliore?
-        # No, aspettiamo.
-        # Se subisco 1 gol dal Real (Forte), vale "meno" di 1 gol dal Frosinone.
-        # Quindi: Goal Subiti * (1 / Sos_Factor)
-        avg_ga_sos = metrics['avg_ga'] * (1.0 / sos_factor) if sos_factor > 0 else metrics['avg_ga']
-
-        
-        avg_gf_final = avg_gf_sos
-        avg_ga_final = avg_ga_sos
-
-        # --- H2H INTELLIGENCE (Scontri Diretti) ---
-        # Se abbiamo l'avversario specifico, controlliamo la storia recente contro di lui
-        opponent = current_match_away_team if is_playing_home else current_match_home_team
-        
-        if opponent:
-            # Cerca gli ultimi 5 scontri diretti (qualsiasi campo)
-            h2h_matches = Match.objects.filter(
-                (Q(home_team=team, away_team=opponent) | Q(home_team=opponent, away_team=team)),
-                status='FINISHED',
-                date_time__lt=date_limit
-            ).order_by('-date_time')[:5]
-            
-            if h2h_matches.count() >= 3:
-                # Calcola media goal fatti/subiti negli scontri diretti
-                h2h_gf_sum = 0
-                h2h_ga_sum = 0
-                for h in h2h_matches:
-                    if h.home_team == team:
-                        h2h_gf_sum += h.result.home_goals
-                        h2h_ga_sum += h.result.away_goals
-                    else:
-                        h2h_gf_sum += h.result.away_goals
-                        h2h_ga_sum += h.result.home_goals
-                
-                avg_gf_h2h = h2h_gf_sum / h2h_matches.count()
-                avg_ga_h2h = h2h_ga_sum / h2h_matches.count()
-                
-                # FUSIONE: 70% Forma Recente (Pesata per Venue & SoS) + 30% Storia H2H
-                avg_gf_final = (avg_gf_sos * 0.7) + (avg_gf_h2h * 0.3)
-                avg_ga_final = (avg_ga_sos * 0.7) + (avg_ga_h2h * 0.3)
-
-        return {
-            'points': metrics['points'],
-            'rest_days': rest_days,
-            'elo': current_elo,
-            'avg_xg': avg_xg_sos, # SoS applicato anche a xG
-            'avg_gf': avg_gf_final, 
-            'avg_ga': avg_ga_final, 
-            'xg_ratio': metrics['xg_ratio'],
-            'eff_att': metrics['eff_att'],
-            'eff_def': metrics['eff_def'],
-            'volatility': metrics['volatility'],
-            'is_derby': metrics['is_derby'],
-            'pressure_index': metrics['pressure_index'],
-            'starters_xg': starters_xg_avg
-        }

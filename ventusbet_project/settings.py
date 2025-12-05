@@ -31,7 +31,9 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 FOOTBALL_DATA_API_KEY = os.getenv('FOOTBALL_DATA_API_KEY')
 
-ALLOWED_HOSTS = []
+THE_ODDS_API_KEY = os.getenv('THE_ODDS_API_KEY')
+
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 # Application definition

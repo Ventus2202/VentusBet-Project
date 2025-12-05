@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 from django.utils import timezone
 from datetime import datetime
-from predictors.models import Match, Team, Season, League
+from predictors.models import Match, Team, Season, League, Referee
 
 class Command(BaseCommand):
     help = 'Scarica le prossime partite da Football-Data.org'
@@ -64,6 +64,19 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"Squadra non riconosciuta: {home_name} o {away_name}"))
                 continue
 
+            # Gestione Arbitro
+            referee_obj = None
+            referees_data = m.get('referees', [])
+            if referees_data:
+                # Cerca l'arbitro principale
+                main_ref = next((r for r in referees_data if r.get('role') == 'REFEREE'), None)
+                if not main_ref and len(referees_data) > 0:
+                    main_ref = referees_data[0] # Fallback al primo
+                
+                if main_ref:
+                    ref_name = main_ref['name']
+                    referee_obj, _ = Referee.objects.get_or_create(name=ref_name)
+
             # Creazione Match (update_or_create evita duplicati)
             match_obj, created = Match.objects.update_or_create(
                 season=season,
@@ -72,7 +85,8 @@ class Command(BaseCommand):
                 defaults={
                     'date_time': match_date,
                     'round_number': match_day,
-                    'status': 'SCHEDULED'
+                    'status': 'SCHEDULED',
+                    'referee': referee_obj
                 }
             )
             
@@ -123,7 +137,9 @@ class Command(BaseCommand):
             'US Sassuolo Calcio': 'Sassuolo',
             'Parma Calcio 1913': 'Parma',
             'Como 1907': 'Como',
-            'Venezia FC': 'Venezia'
+            'Venezia FC': 'Venezia',
+            'US Cremonese': 'Cremonese',
+            'AC Pisa 1909': 'Pisa'
         }
 
         if api_name in mapping:

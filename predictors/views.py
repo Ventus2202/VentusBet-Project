@@ -4,18 +4,18 @@ from django.contrib import messages
 from django_q.tasks import async_task
 from django.http import JsonResponse
 from django.core.cache import cache
-from .utils import get_form_sequence, calculate_accuracy_metrics, get_probable_starters
-from .models import Match, MatchResult, Prediction, Team, Season, TeamFormSnapshot, Rivalry, PlayerMatchStat, Player
+from .utils import get_form_sequence, calculate_accuracy_metrics, get_probable_starters, get_match_comparison_data, get_multi_market_opportunities, detect_probable_formation
+from .models import Match, MatchResult, Prediction, Team, Season, TeamFormSnapshot, Rivalry, PlayerMatchStat, Player, MatchLineup, MatchAbsence, TopScorer
+from .tactical_engine import TacticalEngine
 from django.db.models import Q, Count, Sum
 from operator import attrgetter
 from .forms import MatchStatsForm
-from .services import DashboardService, DataStatusService # NUOVO IMPORT
+from .services import DashboardService, DataStatusService
 
 def is_admin(user):
     return user.is_superuser
 
 def dashboard(request):
-    # Tutta la logica complessa è ora nel Service
     context = DashboardService.get_dashboard_context()
     return render(request, 'predictors/dashboard.html', context)
 
@@ -54,7 +54,6 @@ def control_panel(request):
             
             return redirect('control_panel')
 
-    # Logica Visualizzazione
     next_match = Match.objects.filter(status='SCHEDULED').order_by('date_time').first()
     current_round = next_match.round_number if next_match else 1
     
@@ -65,7 +64,6 @@ def control_panel(request):
     
     pending_matches = []
     for m in matches_qs:
-        # Usa il Service centralizzato per il semaforo
         status, missing_count = DataStatusService.analyze_match_data_status(m)
         
         if status != 'green' or m.status == 'SCHEDULED':
@@ -92,7 +90,6 @@ def admin_matches(request):
     matches = Match.objects.filter(round_number=selected_round).select_related('result', 'home_team', 'away_team').order_by('date_time')
 
     for m in matches:
-        # Usa il Service centralizzato
         status, missing_count = DataStatusService.analyze_match_data_status(m)
         m.data_status_color = status
 
@@ -151,221 +148,144 @@ def match_detail(request, match_id):
     ).first()
 
     # --- LINEUPS ---
-    home_lineup = PlayerMatchStat.objects.filter(
-        match=match, 
-        team=match.home_team
-    ).select_related('player').order_by('-is_starter', '-minutes')
+    # 1. Try to get stored Pre-Match Lineups
+    home_lineup_db = MatchLineup.objects.filter(match=match, team=match.home_team).order_by('-last_updated').first()
+    away_lineup_db = MatchLineup.objects.filter(match=match, team=match.away_team).order_by('-last_updated').first()
 
-    away_lineup = PlayerMatchStat.objects.filter(
-        match=match, 
-        team=match.away_team
-    ).select_related('player').order_by('-is_starter', '-minutes')
-
-    is_probable_lineup = False
+    home_lineup_display = []
+    away_lineup_display = []
     
-    # If no official lineup and match is scheduled -> Estimate Probable
-    if not home_lineup and match.status == 'SCHEDULED':
-        is_probable_lineup = True
+    home_module = home_lineup_db.formation if home_lineup_db else "4-3-3"
+    away_module = away_lineup_db.formation if away_lineup_db else "4-3-3"
+
+    def fetch_players_from_ids(ids):
+        if not ids: return []
+        players = list(Player.objects.filter(id__in=ids))
         
-        def build_probable(team, date_lim):
-            pids = get_probable_starters(team, date_lim)
-            players = {p.id: p for p in Player.objects.filter(id__in=pids)}
-            result = []
-            
-            # Counts for module
-            counts = {'DEF': 0, 'MID': 0, 'FWD': 0}
-            
-            for pid in pids:
-                if pid in players:
-                    p = players[pid]
-                    role = p.primary_position
-                    if role in counts: counts[role] += 1
-                    
-                    result.append({
-                        'player': p,
-                        'position': role if role else '?',
-                        'is_starter': True,
-                        'minutes': 'Avg',
-                        'goals': 0,
-                        'xg': 0
-                    })
-            
-            # Determine Module String (e.g. "4-3-3")
-            module = f"{counts['DEF']}-{counts['MID']}-{counts['FWD']}"
-            
-            # Sort by Role: GK -> DEF -> MID -> FWD -> ?
-            role_order = {'GK': 1, 'DEF': 2, 'MID': 3, 'FWD': 4, '?': 5}
-            result.sort(key=lambda x: role_order.get(x['position'], 99))
-            
-            return result, module
-
-        home_lineup, home_module = build_probable(match.home_team, match.date_time)
-        away_lineup, away_module = build_probable(match.away_team, match.date_time)
-    else:
-        home_module = None
-        away_module = None
-
-    # --- COMPARISON LOGIC (IF FINISHED) ---
-    comparison_data = None
-    if match.status == 'FINISHED' and hasattr(match, 'result') and prediction:
-        res = match.result
-        h_stats = res.home_stats or {}
-        a_stats = res.away_stats or {}
+        # Sort Logic: GK -> DEF -> MID -> FWD -> ?
+        role_priority = {'GK': 1, 'DEF': 2, 'MID': 3, 'FWD': 4}
         
-        def get_stat(stats_dict, keys):
-            for k in keys:
-                if k in stats_dict: return float(stats_dict[k])
-            return 0.0
-
-        # List of metrics to compare
-        # Format: (Label, PredictionFieldSuffix, [JSON Keys])
-        metrics_map = [
-            ('Possesso', 'possession', ['possession', 'possesso']),
-            ('Tiri Totali', 'total_shots', ['tiri_totali', 'total_shots']),
-            ('Tiri in Porta', 'shots_on_target', ['tiri_porta', 'shots_on_target']),
-            ('Corner', 'corners', ['corner', 'corners']),
-            ('Falli', 'fouls', ['falli', 'fouls']),
-            ('Gialli', 'yellow_cards', ['gialli', 'yellow_cards']),
-            ('Fuorigioco', 'offsides', ['offsides', 'fuorigioco']),
-        ]
-
-        def get_accuracy_info(label, pred, real):
-            diff = real - pred
-            abs_diff = abs(diff)
-            max_val = max(pred, real, 1)
-            
-            # Calculate Accuracy %
-            # Formula: 100% - Relative Error
-            # Se Pred=0 e Real=0 -> 100%
-            if pred == real:
-                acc_percent = 100
-            else:
-                acc_percent = max(0, round(100 * (1 - (abs_diff / max_val))))
-
-            # Determine Status
-            status = 'bad'
-            if label == 'Goal':
-                if abs_diff == 0: status = 'perfect'
-                elif abs_diff == 1: status = 'good'
-            elif label == 'Possesso':
-                if abs_diff <= 2: status = 'perfect'
-                elif abs_diff <= 8: status = 'good'
-            elif label in ['Tiri Totali', 'Falli']:
-                if abs_diff <= 2: status = 'perfect'
-                elif abs_diff <= 5: status = 'good'
-            else: # Low count stats
-                if abs_diff == 0: status = 'perfect'
-                elif abs_diff <= 2: status = 'good'
-
-            # Determine Label
-            if diff == 0: diff_label = "Esatto"
-            elif diff > 0: diff_label = "Sottostimato" # Reale > Predetto
-            else: diff_label = "Sovrastimato" # Reale < Predetto
-
-            return status, diff_label, acc_percent
-
-        comparison_data = []
+        players.sort(key=lambda p: role_priority.get(p.primary_position, 99))
         
-        # 1. GOALS (Special handling as they are model fields)
-        h_status, h_label, h_acc = get_accuracy_info('Goal', prediction.home_goals, res.home_goals)
-        a_status, a_label, a_acc = get_accuracy_info('Goal', prediction.away_goals, res.away_goals)
-        
-        comparison_data.append({
-            'label': 'Goal',
-            'home_pred': prediction.home_goals,
-            'home_real': res.home_goals,
-            'home_diff': res.home_goals - prediction.home_goals,
-            'home_status': h_status,
-            'home_diff_label': h_label,
-            'home_acc': h_acc,
-            'away_pred': prediction.away_goals,
-            'away_real': res.away_goals,
-            'away_diff': res.away_goals - prediction.away_goals,
-            'away_status': a_status,
-            'away_diff_label': a_label,
-            'away_acc': a_acc,
-            'is_main': True
-        })
+        return [{'player': p, 'position': p.primary_position, 'is_starter': True, 'minutes': 'Est', 'goals': 0, 'xg': 0} for p in players]
 
-        # 2. OTHER STATS
-        for label, field_suffix, keys in metrics_map:
-            p_home = getattr(prediction, f'home_{field_suffix}', 0)
-            p_away = getattr(prediction, f'away_{field_suffix}', 0)
-            
-            r_home = int(get_stat(h_stats, keys))
-            r_away = int(get_stat(a_stats, keys))
-            
-            h_status, h_label, h_acc = get_accuracy_info(label, p_home, r_home)
-            a_status, a_label, a_acc = get_accuracy_info(label, p_away, r_away)
-            
-            comparison_data.append({
-                'label': label,
-                'home_pred': p_home,
-                'home_real': r_home,
-                'home_diff': r_home - p_home,
-                'home_status': h_status,
-                'home_diff_label': h_label,
-                'home_acc': h_acc,
-                'away_pred': p_away,
-                'away_real': r_away,
-                'away_diff': r_away - p_away,
-                'away_status': a_status,
-                'away_diff_label': a_label,
-                'away_acc': a_acc,
-                'is_main': False
-            })
+    if home_lineup_db and home_lineup_db.starting_xi:
+        home_lineup_display = fetch_players_from_ids(home_lineup_db.starting_xi)
+        # Check status from DB object
+        if home_lineup_db.status == 'PROBABLE':
+            is_probable_lineup = True
+    
+    if away_lineup_db and away_lineup_db.starting_xi:
+        away_lineup_display = fetch_players_from_ids(away_lineup_db.starting_xi)
+        # Check status from DB object
+        if away_lineup_db.status == 'PROBABLE':
+            is_probable_lineup = True
+
+    # Fallback if DB empty (keep existing logic but ensure it doesn't override True to False)
+    if not home_lineup_display:
+        home_played = PlayerMatchStat.objects.filter(match=match, team=match.home_team, is_starter=True).select_related('player')
+        if home_played.exists():
+             home_lineup_display = home_played
+        else:
+             is_probable_lineup = True
+             pids = get_probable_starters(match.home_team, match.date_time)
+             home_fmt = detect_probable_formation(match.home_team, match.date_time) # SMART DETECTION
+             
+             home_lineup_display = fetch_players_from_ids(pids)
+             home_module = home_fmt # Update display module
+             
+             if not home_lineup_db:
+                 home_lineup_db = MatchLineup(match=match, team=match.home_team, formation=home_fmt, starting_xi=pids)
+
+    if not away_lineup_display:
+        away_played = PlayerMatchStat.objects.filter(match=match, team=match.away_team, is_starter=True).select_related('player')
+        if away_played.exists():
+             away_lineup_display = away_played
+        else:
+             is_probable_lineup = True
+             pids = get_probable_starters(match.away_team, match.date_time)
+             away_fmt = detect_probable_formation(match.away_team, match.date_time) # SMART DETECTION
+             
+             away_lineup_display = fetch_players_from_ids(pids)
+             away_module = away_fmt # Update display module
+             
+             if not away_lineup_db:
+                 away_lineup_db = MatchLineup(match=match, team=match.away_team, formation=away_fmt, starting_xi=pids)
+
+    # --- TACTICAL ANALYSIS ---
+    tactical_report = TacticalEngine.analyze_matchup(home_lineup_db, away_lineup_db)
+
+    # --- ABSENCES ---
+    home_absences = MatchAbsence.objects.filter(match=match, team=match.home_team)
+    away_absences = MatchAbsence.objects.filter(match=match, team=match.away_team)
+
+    # --- COMPARISON ---
+    comparison_data = get_match_comparison_data(match, prediction)
+
+    # --- TOP BETS ---
+    top_bets = []
+    if prediction:
+        all_opportunities = get_multi_market_opportunities(prediction)
+        top_bets = all_opportunities[:3] 
 
     context = {
         'match': match,
         'prediction': prediction,
-        'comparison_data': comparison_data, # Passed to template
+        'comparison_data': comparison_data,
         'home_snap': home_snap,
         'away_snap': away_snap,
         'home_form': get_form_sequence(match.home_team),
         'away_form': get_form_sequence(match.away_team),
         'rivalry': rivalry,
-        'home_lineup': home_lineup,
-        'away_lineup': away_lineup,
+        'home_lineup': home_lineup_display,
+        'away_lineup': away_lineup_display,
         'is_probable_lineup': is_probable_lineup,
         'home_module': home_module,
         'away_module': away_module,
+        'home_absences': home_absences, # NEW
+        'away_absences': away_absences, # NEW
+        'top_bets': top_bets,
+        'tactical_report': tactical_report,
     }
     return render(request, 'predictors/match_detail.html', context)
+
 def team_detail(request, team_id):
     team = get_object_or_404(Team, id=team_id)
     
     all_matches = Match.objects.filter(
         Q(home_team=team) | Q(away_team=team)
-    ).order_by('-date_time')
+    ).select_related('result', 'home_team', 'away_team', 'season').order_by('-date_time')
 
     played_matches = all_matches.filter(status='FINISHED')
-    upcoming_matches = all_matches.filter(status='SCHEDULEED')
+    upcoming_matches = all_matches.filter(status='SCHEDULED')
+
+    team_stats_aggregated = Match.objects.filter(
+        Q(home_team=team) | Q(away_team=team),
+        status='FINISHED'
+    ).aggregate(
+        played_count=Count('id'),
+        home_wins=Count('id', filter=Q(home_team=team, result__winner='1')),
+        home_draws=Count('id', filter=Q(home_team=team, result__winner='X')),
+        home_losses=Count('id', filter=Q(home_team=team, result__winner='2')),
+        away_wins=Count('id', filter=Q(away_team=team, result__winner='2')),
+        away_draws=Count('id', filter=Q(away_team=team, result__winner='X')),
+        away_losses=Count('id', filter=Q(away_team=team, result__winner='1')),
+        home_gf=Sum('result__home_goals', filter=Q(home_team=team)),
+        home_ga=Sum('result__away_goals', filter=Q(home_team=team)),
+        away_gf=Sum('result__away_goals', filter=Q(away_team=team)),
+        away_ga=Sum('result__home_goals', filter=Q(away_team=team))
+    )
 
     stats = {
-        'played': played_matches.count(),
-        'wins': 0, 'draws': 0, 'losses': 0,
-        'gf': 0, 'ga': 0
+        'played': team_stats_aggregated['played_count'] or 0,
+        'wins': (team_stats_aggregated['home_wins'] or 0) + (team_stats_aggregated['away_wins'] or 0),
+        'draws': (team_stats_aggregated['home_draws'] or 0) + (team_stats_aggregated['away_draws'] or 0),
+        'losses': (team_stats_aggregated['home_losses'] or 0) + (team_stats_aggregated['away_losses'] or 0),
+        'gf': (team_stats_aggregated['home_gf'] or 0) + (team_stats_aggregated['away_gf'] or 0),
+        'ga': (team_stats_aggregated['home_ga'] or 0) + (team_stats_aggregated['away_ga'] or 0)
     }
-
-    for m in played_matches:
-        if not hasattr(m, 'result'): continue
-        res = m.result
-        
-        is_home = (m.home_team == team)
-        my_goals = res.home_goals if is_home else res.away_goals
-        opp_goals = res.away_goals if is_home else res.home_goals
-        
-        stats['gf'] += my_goals
-        stats['ga'] += opp_goals
-
-        if res.winner == '1':
-            if is_home: stats['wins'] += 1
-            else: stats['losses'] += 1
-        elif res.winner == '2':
-            if not is_home: stats['wins'] += 1
-            else: stats['losses'] += 1
-        else:
-            stats['draws'] += 1
+    
+    stats['gd'] = stats['gf'] - stats['ga']
 
     if stats['played'] > 0:
         stats['avg_gf'] = round(stats['gf'] / stats['played'], 2)
@@ -384,74 +304,94 @@ def team_detail(request, team_id):
     return render(request, 'predictors/team_detail.html', context)
 
 def standings(request):
-    teams = Team.objects.all()
-    stats = {t.id: {
-        'team': t, 'played': 0, 'points': 0, 'won': 0, 'drawn': 0, 'lost': 0,
-        'gf': 0, 'ga': 0, 'gd': 0
-    } for t in teams}
+    cache_key = 'standings_table_v1'
+    table = cache.get(cache_key)
+    scorers = cache.get('top_scorers_v1')
 
-    home_stats = Match.objects.filter(status='FINISHED').values('home_team').annotate(
-        played=Count('id'),
-        wins=Count('id', filter=Q(result__winner='1')),
-        draws=Count('id', filter=Q(result__winner='X')),
-        losses=Count('id', filter=Q(result__winner='2')),
-        gf=Sum('result__home_goals'),
-        ga=Sum('result__away_goals')
-    )
+    if table is None or scorers is None:
+        teams = Team.objects.all()
+        # ... (rest of logic remains but we assume it executes if either is None for simplicity here, ideally we separate)
+        # For brevity in this patch, we re-run table logic if scorers are missing or vice versa.
+        
+        stats = {t.id: {
+            'team': t, 'played': 0, 'points': 0, 'won': 0, 'drawn': 0, 'lost': 0,
+            'gf': 0, 'ga': 0, 'gd': 0
+        } for t in teams}
 
-    for entry in home_stats:
-        t_id = entry['home_team']
-        if t_id in stats:
-            s = stats[t_id]
-            s['played'] += entry['played']
-            s['won'] += entry['wins']
-            s['drawn'] += entry['draws']
-            s['lost'] += entry['losses']
-            s['gf'] += (entry['gf'] or 0)
-            s['ga'] += (entry['ga'] or 0)
-            s['points'] += (entry['wins'] * 3) + entry['draws']
+        home_stats = Match.objects.filter(status='FINISHED').values('home_team').annotate(
+            played=Count('id'),
+            wins=Count('id', filter=Q(result__winner='1')),
+            draws=Count('id', filter=Q(result__winner='X')),
+            losses=Count('id', filter=Q(result__winner='2')),
+            gf=Sum('result__home_goals'),
+            ga=Sum('result__away_goals')
+        )
 
-    away_stats = Match.objects.filter(status='FINISHED').values('away_team').annotate(
-        played=Count('id'),
-        wins=Count('id', filter=Q(result__winner='2')),
-        draws=Count('id', filter=Q(result__winner='X')),
-        losses=Count('id', filter=Q(result__winner='1')),
-        gf=Sum('result__away_goals'),
-        ga=Sum('result__home_goals')
-    )
+        for entry in home_stats:
+            t_id = entry['home_team']
+            if t_id in stats:
+                s = stats[t_id]
+                s['played'] += entry['played']
+                s['won'] += entry['wins']
+                s['drawn'] += entry['draws']
+                s['lost'] += entry['losses']
+                s['gf'] += (entry['gf'] or 0)
+                s['ga'] += (entry['ga'] or 0)
+                s['points'] += (entry['wins'] * 3) + entry['draws']
 
-    for entry in away_stats:
-        t_id = entry['away_team']
-        if t_id in stats:
-            s = stats[t_id]
-            s['played'] += entry['played']
-            s['won'] += entry['wins']
-            s['drawn'] += entry['draws']
-            s['lost'] += entry['losses']
-            s['gf'] += (entry['gf'] or 0)
-            s['ga'] += (entry['ga'] or 0)
-            s['points'] += (entry['wins'] * 3) + entry['draws']
+        away_stats = Match.objects.filter(status='FINISHED').values('away_team').annotate(
+            played=Count('id'),
+            wins=Count('id', filter=Q(result__winner='2')),
+            draws=Count('id', filter=Q(result__winner='X')),
+            losses=Count('id', filter=Q(result__winner='1')),
+            gf=Sum('result__away_goals'),
+            ga=Sum('result__home_goals')
+        )
 
-    table = []
-    for s in stats.values():
-        s['gd'] = s['gf'] - s['ga']
-        team_obj = s['team']
-        team_obj.played = s['played']
-        team_obj.points = s['points']
-        team_obj.won = s['won']
-        team_obj.drawn = s['drawn']
-        team_obj.lost = s['lost']
-        team_obj.gf = s['gf']
-        team_obj.ga = s['ga']
-        team_obj.gd = s['gd']
-        table.append(team_obj)
+        for entry in away_stats:
+            t_id = entry['away_team']
+            if t_id in stats:
+                s = stats[t_id]
+                s['played'] += entry['played']
+                s['won'] += entry['wins']
+                s['drawn'] += entry['draws']
+                s['lost'] += entry['losses']
+                s['gf'] += (entry['gf'] or 0)
+                s['ga'] += (entry['ga'] or 0)
+                s['points'] += (entry['wins'] * 3) + entry['draws']
 
-    table = sorted(table, key=attrgetter('points', 'gd', 'gf'), reverse=True)
+        table = []
+        for s in stats.values():
+            s['gd'] = s['gf'] - s['ga']
+            team_obj = s['team']
+            team_obj.played = s['played']
+            team_obj.points = s['points']
+            team_obj.won = s['won']
+            team_obj.drawn = s['drawn']
+            team_obj.lost = s['lost']
+            team_obj.gf = s['gf']
+            team_obj.ga = s['ga']
+            team_obj.gd = s['gd']
+            table.append(team_obj)
 
-    for i, row in enumerate(table):
-        row.position = i + 1
+        table = sorted(table, key=attrgetter('points', 'gd', 'gf'), reverse=True)
 
-    return render(request, 'predictors/standings.html', {'table': table})
+        for i, row in enumerate(table):
+            row.position = i + 1
+            
+        # --- MARCATORI ---
+        current_season = Season.objects.filter(is_current=True).first()
+        if not current_season: current_season = Season.objects.last()
+        
+        if current_season:
+            scorers = TopScorer.objects.filter(season=current_season).select_related('player', 'team').order_by('rank')[:15]
+        else:
+            scorers = []
+            
+        cache.set(cache_key, table, 3600)
+        cache.set('top_scorers_v1', scorers, 3600)
+
+    return render(request, 'predictors/standings.html', {'table': table, 'scorers': scorers})
 
 def performance(request):
     all_finished = Match.objects.filter(
